@@ -1,0 +1,359 @@
+:root {
+    --naranja: #ff6b00;
+    --oscuro: #171717;
+}
+
+
+body {
+    background: #f5f6f7;
+    font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+
+/* LOGIN */
+
+.login-admin {
+    min-height: 100vh;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 25px;
+
+    background:
+        radial-gradient(
+            circle at 80% 20%,
+            rgba(255, 107, 0, 0.16),
+            transparent 35%
+        ),
+        #171717;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 430px;
+
+    background: white;
+
+    padding: 35px;
+
+    border-radius: 22px;
+
+    box-shadow:
+        0 25px 60px
+        rgba(0, 0, 0, 0.25);
+}
+
+.marca-admin {
+    color: var(--naranja);
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: 1px;
+
+    margin-bottom: 25px;
+}
+
+.btn-kimbos {
+    background: var(--naranja);
+    color: white;
+
+    border: none;
+
+    padding: 12px;
+
+    border-radius: 11px;
+
+    font-weight: 700;
+}
+
+.btn-kimbos:hover {
+    background: #df5d00;
+    color: white;
+}
+
+
+/* NAVBAR */
+
+.navbar-admin {
+    background: var(--oscuro);
+    color: white;
+
+    padding: 17px 0;
+}
+
+.logo-admin {
+    font-weight: 900;
+    font-size: 1.4rem;
+
+    margin-right: 18px;
+}
+
+.panel-label {
+    color: #aaa;
+}
+
+.usuario-admin {
+    color: #ddd;
+}
+
+
+/* ESTADÍSTICAS */
+
+.estadistica-card {
+    background: white;
+
+    border:
+        1px solid #e7e7e7;
+
+    border-radius: 18px;
+
+    padding: 20px;
+}
+
+.estadistica-card small {
+    color: #777;
+
+    display: block;
+}
+
+.estadistica-card strong {
+    font-size: 2rem;
+
+    display: block;
+
+    margin-top: 5px;
+}
+
+
+/* PEDIDOS */
+
+.pedido-admin-card {
+    background: white;
+
+    border:
+        1px solid #e5e5e5;
+
+    border-radius: 20px;
+
+    height: 100%;
+
+    padding: 22px;
+}
+
+.codigo-admin {
+    font-weight: 800;
+}
+
+.estado-admin {
+    display: inline-block;
+
+    padding: 6px 11px;
+
+    border-radius: 20px;
+
+    background: #fff1e7;
+
+    color: #d75b00;
+
+    font-size: 0.82rem;
+
+    font-weight: 700;
+}
+
+.cliente-admin {
+    background: #f8f8f8;
+
+    border-radius: 14px;
+
+    padding: 14px;
+
+    margin: 16px 0;
+}
+
+.productos-admin {
+    border-top: 1px solid #eee;
+    border-bottom: 1px solid #eee;
+
+    padding: 12px 0;
+
+    margin-bottom: 16px;
+}
+
+.producto-admin {
+    display: flex;
+
+    justify-content:
+        space-between;
+
+    padding: 5px 0;
+}
+
+.total-admin {
+    font-size: 1.3rem;
+
+    font-weight: 800;
+
+    color: var(--naranja);
+}
+
+.btn-siguiente {
+    background: var(--oscuro);
+
+    color: white;
+
+    border: none;
+
+    width: 100%;
+
+    border-radius: 11px;
+
+    padding: 11px;
+
+    font-weight: 700;
+}
+
+.btn-siguiente:hover {
+    background: var(--naranja);
+    color: white;
+}
+
+.btn-siguiente:disabled {
+    background: #d5d5d5;
+    color: #777;
+}
+/* ============================================
+   PRODUCTOS
+============================================= */
+
+.modal-productos-admin {
+    border: none;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.modal-productos-admin .modal-header,
+.modal-productos-admin .modal-body {
+    padding: 24px 28px;
+}
+
+.producto-gestion {
+    border: 1px solid #e5e5e5;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 14px;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.producto-gestion h6 {
+    margin-bottom: 4px;
+    font-weight: 700;
+}
+
+.producto-precio-admin {
+    color: var(--naranja);
+    font-weight: 800;
+}
+
+.estado-disponible {
+    color: #17884f;
+    font-weight: 700;
+}
+
+.estado-agotado {
+    color: #c43838;
+    font-weight: 700;
+}
+
+.btn-disponibilidad {
+    border: none;
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.btn-marcar-agotado {
+    background: #fff0f0;
+    color: #b82f2f;
+}
+
+.btn-marcar-disponible {
+    background: #eaf8f0;
+    color: #187747;
+}
+/* ============================================
+   FORMULARIO PRODUCTOS
+============================================= */
+
+.panel-formulario-producto {
+    background: #f8f8f8;
+    border: 1px solid #e4e4e4;
+    border-radius: 18px;
+    padding: 22px;
+}
+
+.panel-formulario-producto .form-control,
+.panel-formulario-producto .form-select {
+    border-radius: 10px;
+}
+
+.acciones-producto {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.btn-editar-producto {
+    border: 1px solid #d8d8d8;
+    background: white;
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+.btn-desactivar-producto {
+    border: 1px solid #f0c5c5;
+    background: #fff4f4;
+    color: #a72d2d;
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+@media (max-width: 767px) {
+
+    .producto-gestion {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .acciones-producto {
+        justify-content: stretch;
+    }
+
+    .acciones-producto button {
+        width: 100%;
+    }
+
+}
+.link-mapa-admin {
+    color: #666;
+    text-decoration: none;
+}
+
+.link-mapa-admin:hover {
+    color: var(--naranja);
+    text-decoration: underline;
+}

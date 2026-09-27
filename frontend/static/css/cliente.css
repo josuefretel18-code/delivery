@@ -1,0 +1,668 @@
+:root {
+    --kimbos-dark: #171717;
+    --kimbos-primary: #ff6b00;
+    --kimbos-primary-dark: #db5900;
+    --kimbos-light: #fff8f2;
+    --kimbos-border: #ececec;
+}
+
+
+body {
+    background: #fafafa;
+    color: #202020;
+    font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+
+/* NAVBAR */
+
+.navbar-kimbos {
+    background: var(--kimbos-dark);
+    padding: 16px 0;
+}
+
+.navbar-brand {
+    font-size: 1.55rem;
+    letter-spacing: 1px;
+}
+
+.btn-carrito {
+    background: var(--kimbos-primary);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 9px 16px;
+    font-weight: 600;
+}
+
+.btn-carrito:hover {
+    background: var(--kimbos-primary-dark);
+    color: white;
+}
+
+
+/* HERO */
+
+.hero-kimbos {
+    background:
+        radial-gradient(
+            circle at 85% 20%,
+            rgba(255, 107, 0, 0.15),
+            transparent 30%
+        ),
+        var(--kimbos-dark);
+
+    color: white;
+
+    padding: 70px 0;
+}
+
+.hero-kimbos h1 {
+    font-size: clamp(2.4rem, 5vw, 4.5rem);
+    font-weight: 800;
+    line-height: 1.02;
+    max-width: 650px;
+}
+
+.hero-kimbos h1 span {
+    color: var(--kimbos-primary);
+}
+
+.hero-kimbos p {
+    font-size: 1.05rem;
+    color: #bfbfbf;
+    max-width: 570px;
+    margin-top: 20px;
+}
+
+.badge-abierto {
+    background: rgba(61, 201, 127, 0.15);
+    color: #6ce7a4;
+    font-weight: 500;
+    padding: 9px 14px;
+    border-radius: 20px;
+}
+
+
+/* SEDE */
+
+.sede-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 24px;
+}
+
+.sede-card small {
+    color: #aaa;
+}
+
+.sede-card h5 {
+    margin-top: 7px;
+    margin-bottom: 6px;
+}
+
+.sede-card p {
+    color: #d0d0d0;
+}
+
+
+/* MENÚ */
+
+.titulo-seccion {
+    font-weight: 800;
+}
+
+.categorias {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+}
+
+.btn-categoria {
+    white-space: nowrap;
+    border: 1px solid #ddd;
+    background: white;
+    padding: 10px 18px;
+    border-radius: 30px;
+    font-weight: 600;
+}
+
+.btn-categoria:hover,
+.btn-categoria.activa {
+    background: var(--kimbos-dark);
+    color: white;
+    border-color: var(--kimbos-dark);
+}
+
+
+/* PRODUCTOS */
+
+.producto-card {
+    border: 1px solid var(--kimbos-border);
+    border-radius: 20px;
+    overflow: hidden;
+    background: white;
+    height: 100%;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.producto-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+}
+
+.producto-imagen {
+    height: 190px;
+    background: var(--kimbos-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.producto-imagen img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.producto-placeholder {
+    font-size: 4.5rem;
+}
+
+.producto-body {
+    padding: 20px;
+}
+
+.producto-nombre {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.producto-descripcion {
+    color: #777;
+    font-size: 0.9rem;
+    min-height: 42px;
+}
+
+.producto-precio {
+    color: var(--kimbos-primary);
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.producto-tiempo {
+    font-size: 0.82rem;
+    color: #888;
+}
+
+.btn-agregar {
+    background: var(--kimbos-dark);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.btn-agregar:hover {
+    background: var(--kimbos-primary);
+    color: white;
+}
+
+.btn-agotado {
+    background: #e9e9e9;
+    color: #999;
+    border: none;
+    border-radius: 12px;
+    cursor: not-allowed;
+}
+
+
+/* CARRITO */
+
+.offcanvas {
+    width: 430px !important;
+}
+
+.carrito-vacio {
+    margin: auto;
+    color: #777;
+}
+
+.icono-carrito-vacio {
+    font-size: 4rem;
+    margin-bottom: 15px;
+}
+
+.item-carrito {
+    border-bottom: 1px solid #eee;
+    padding: 16px 0;
+}
+
+.item-carrito h6 {
+    margin-bottom: 4px;
+    font-weight: 700;
+}
+
+.controles-cantidad {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.btn-cantidad {
+    width: 31px;
+    height: 31px;
+    border-radius: 50%;
+    border: 1px solid #ddd;
+    background: white;
+    font-weight: bold;
+}
+
+.precio-total {
+    color: var(--kimbos-primary);
+    font-size: 1.5rem;
+}
+
+.btn-principal {
+    background: var(--kimbos-primary);
+    color: white;
+    border: none;
+    padding: 13px;
+    border-radius: 12px;
+    font-weight: 700;
+}
+
+.btn-principal:hover {
+    background: var(--kimbos-primary-dark);
+    color: white;
+}
+
+
+/* RESPONSIVE */
+
+@media (max-width: 767px) {
+
+    .hero-kimbos {
+        padding: 45px 0;
+    }
+
+    .sede-card {
+        margin-top: 30px;
+    }
+
+    .producto-imagen {
+        height: 160px;
+    }
+
+    .offcanvas {
+        width: 100% !important;
+    }
+
+}
+
+/* ==================================================
+   ACCESO DEL CLIENTE
+================================================== */
+
+.modal-acceso {
+    border: none;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.modal-acceso .modal-header {
+    padding: 28px 28px 10px;
+}
+
+.modal-acceso .modal-body {
+    padding: 22px 28px 30px;
+}
+
+.modal-acceso .nav-pills {
+    background: #f3f3f3;
+    padding: 5px;
+    border-radius: 14px;
+}
+
+.modal-acceso .nav-link {
+    color: #555;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.modal-acceso .nav-link.active {
+    background: var(--kimbos-dark);
+    color: white;
+}
+
+.modal-acceso .form-control {
+    border-radius: 12px;
+    border: 1px solid #dedede;
+    font-size: 0.95rem;
+}
+
+.modal-acceso .form-control:focus {
+    border-color: var(--kimbos-primary);
+    box-shadow:
+        0 0 0 0.2rem
+        rgba(255, 107, 0, 0.12);
+}
+
+#btnCuenta {
+    border-radius: 10px;
+}
+/* ==================================================
+   ENTREGA Y GOOGLE MAPS
+================================================== */
+
+.modal-entrega {
+    border: none;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.modal-entrega .modal-header {
+    padding: 24px 28px;
+}
+
+.modal-entrega .modal-body {
+    padding: 28px;
+}
+
+#mapaEntrega {
+    width: 100%;
+    height: 430px;
+    border-radius: 18px;
+    background: #eeeeee;
+    overflow: hidden;
+}
+
+#contenedorAutocomplete {
+    width: 100%;
+}
+
+#contenedorAutocomplete gmp-place-autocomplete {
+    width: 100%;
+}
+
+.destino-seleccionado,
+.origen-entrega {
+    background: #f7f7f7;
+    border: 1px solid #e7e7e7;
+    border-radius: 14px;
+    padding: 15px;
+}
+
+@media (max-width: 991px) {
+
+    #mapaEntrega {
+        height: 320px;
+    }
+
+}
+/* ==================================================
+   RESUMEN DE RUTA
+================================================== */
+
+.resumen-ruta {
+    background: #fff8f2;
+    border: 1px solid #ffd9bd;
+    border-radius: 16px;
+    padding: 18px;
+}
+
+.resumen-ruta .col-4 {
+    text-align: center;
+}
+
+.resumen-ruta small {
+    display: block;
+    color: #777;
+    margin-bottom: 5px;
+}
+
+.resumen-ruta strong {
+    display: block;
+    font-size: 1.1rem;
+}
+/* ==================================================
+   RESUMEN FINAL
+================================================== */
+
+.modal-resumen-pedido {
+    border: none;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.modal-resumen-pedido .modal-header,
+.modal-resumen-pedido .modal-body {
+    padding: 24px 28px;
+}
+
+.resumen-bloque {
+    background: #f8f8f8;
+    border: 1px solid #e9e9e9;
+    border-radius: 16px;
+    padding: 18px;
+}
+
+.resumen-producto-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e7e7e7;
+}
+
+.resumen-producto-item:last-child {
+    border-bottom: none;
+}
+
+.totales-pedido {
+    background: #fff8f2;
+    border: 1px solid #ffd6b8;
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.total-final {
+    color: var(--kimbos-primary);
+    font-size: 1.6rem;
+}
+
+
+/* ==================================================
+   PEDIDO EXITOSO
+================================================== */
+
+.modal-exito {
+    border: none;
+    border-radius: 24px;
+}
+
+.icono-exito {
+    width: 70px;
+    height: 70px;
+    margin: auto;
+    border-radius: 50%;
+    background: #dcf8e7;
+    color: #168447;
+    font-size: 2.5rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.codigo-pedido {
+    background: #f7f7f7;
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 24px;
+}
+
+.codigo-pedido strong {
+    font-size: 1.2rem;
+}
+/* ==================================================
+   MIS PEDIDOS
+================================================== */
+
+.modal-mis-pedidos {
+    border: none;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.modal-mis-pedidos .modal-header {
+    padding: 24px 28px;
+}
+
+.modal-mis-pedidos .modal-body {
+    padding: 28px;
+    background: #f7f7f7;
+}
+
+
+/* TARJETA DEL PEDIDO */
+
+.pedido-cliente-card {
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 20px;
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.pedido-codigo {
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+
+.pedido-fecha {
+    color: #888;
+    font-size: 0.85rem;
+}
+
+.pedido-total {
+    color: var(--kimbos-primary);
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.pedido-productos {
+    background: #fafafa;
+    border-radius: 14px;
+    padding: 14px;
+    margin-top: 18px;
+}
+
+.pedido-producto {
+    display: flex;
+    justify-content: space-between;
+    padding: 7px 0;
+}
+
+
+/* ==================================================
+   SEGUIMIENTO
+================================================== */
+
+.seguimiento-simple {
+    margin-top: 25px;
+}
+
+.seguimiento-simple h6 {
+    margin-bottom: 18px;
+}
+
+.estado-simple {
+    display: flex;
+    min-height: 58px;
+    position: relative;
+}
+
+.estado-icono {
+    width: 30px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.estado-circulo {
+    width: 17px;
+    height: 17px;
+
+    border-radius: 50%;
+
+    border: 2px solid #d0d0d0;
+
+    background: white;
+
+    position: relative;
+    z-index: 2;
+}
+
+.estado-linea {
+    position: absolute;
+
+    width: 2px;
+
+    left: 7px;
+    top: 17px;
+    bottom: -2px;
+
+    background: #dedede;
+}
+
+.estado-simple:last-child .estado-linea {
+    display: none;
+}
+
+.estado-texto {
+    padding-bottom: 18px;
+}
+
+.estado-texto strong {
+    display: block;
+}
+
+
+/* COMPLETADO */
+
+.estado-simple.completado .estado-circulo {
+    background: #22a866;
+    border-color: #22a866;
+}
+
+.estado-simple.completado .estado-linea {
+    background: #22a866;
+}
+
+
+/* ESTADO ACTUAL */
+
+.estado-simple.actual .estado-circulo {
+    background: var(--kimbos-primary);
+    border-color: var(--kimbos-primary);
+
+    box-shadow:
+        0 0 0 5px
+        rgba(255, 107, 0, 0.13);
+}
+
+.estado-simple.actual .estado-texto strong {
+    color: var(--kimbos-primary);
+}

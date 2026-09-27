@@ -1,0 +1,1879 @@
+let usuarioAdmin = null;
+let catalogoAdmin = [];
+
+
+/* ========================================================
+   INICIO
+======================================================== */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+        configurarLoginAdmin();
+        verificarAdminGuardado();
+
+        document.getElementById(
+            "btnActualizarPedidos"
+        ).addEventListener(
+            "click",
+            cargarPedidosAdmin
+        );
+
+        document.getElementById(
+            "btnCerrarSesionAdmin"
+        ).addEventListener(
+            "click",
+            cerrarSesionAdmin
+        );
+        document.getElementById(
+            "btnGestionProductos"
+        ).addEventListener(
+            "click",
+            cargarProductosAdmin
+        );
+        document.getElementById(
+            "btnNuevoProducto"
+        ).addEventListener(
+            "click",
+            abrirNuevoProducto
+        );
+
+
+        document.getElementById(
+            "btnCancelarProducto"
+        ).addEventListener(
+            "click",
+            cerrarFormularioProducto
+        );
+
+
+        document.getElementById(
+            "btnGuardarProducto"
+        ).addEventListener(
+            "click",
+            guardarProductoAdmin
+        );
+
+
+        document.getElementById(
+            "btnNuevaCategoria"
+        ).addEventListener(
+            "click",
+            mostrarNuevaCategoria
+        );
+
+
+        document.getElementById(
+            "btnCancelarCategoria"
+        ).addEventListener(
+            "click",
+            ocultarNuevaCategoria
+        );
+
+
+        document.getElementById(
+            "btnGuardarCategoria"
+        ).addEventListener(
+            "click",
+            guardarCategoriaAdmin
+        );
+
+    }
+);
+
+
+/* ========================================================
+   LOGIN
+======================================================== */
+
+function configurarLoginAdmin() {
+
+    document.getElementById(
+        "formAdminLogin"
+    ).addEventListener(
+        "submit",
+        loginAdmin
+    );
+
+}
+
+
+async function loginAdmin(
+    event
+) {
+
+    event.preventDefault();
+
+
+    const correo =
+        document.getElementById(
+            "adminCorreo"
+        ).value.trim();
+
+
+    const password =
+        document.getElementById(
+            "adminPassword"
+        ).value;
+
+
+    const mensaje =
+        document.getElementById(
+            "mensajeAdminLogin"
+        );
+
+
+    mensaje.classList.add(
+        "d-none"
+    );
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/auth/login",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        correo,
+                        password
+                    })
+                }
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            throw new Error(
+                datos.mensaje ||
+                "Datos incorrectos."
+            );
+
+        }
+
+
+        localStorage.setItem(
+            "kimbos_admin_token",
+            datos.token
+        );
+
+
+        const correcto =
+            await cargarPerfilAdmin();
+
+
+        if (!correcto) {
+
+            localStorage.removeItem(
+                "kimbos_admin_token"
+            );
+
+            throw new Error(
+                "Esta cuenta no tiene permisos de administrador u operador."
+            );
+
+        }
+
+
+        mostrarPanelAdmin();
+
+        await cargarPedidosAdmin();
+
+
+    } catch (error) {
+
+        mensaje.textContent =
+            error.message;
+
+        mensaje.classList.remove(
+            "d-none"
+        );
+
+    }
+
+}
+
+
+/* ========================================================
+   PERFIL
+======================================================== */
+
+async function cargarPerfilAdmin() {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    if (!token) {
+        return false;
+    }
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/auth/me",
+                {
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+
+        if (!respuesta.ok) {
+            return false;
+        }
+
+
+        const datos =
+            await respuesta.json();
+
+
+        usuarioAdmin =
+            datos.usuario || datos;
+
+
+        if (
+            usuarioAdmin.rol !== "ADMIN" &&
+            usuarioAdmin.rol !== "OPERADOR"
+        ) {
+
+            usuarioAdmin = null;
+
+            return false;
+
+        }
+
+
+        return true;
+
+
+    } catch {
+
+        return false;
+
+    }
+
+}
+
+
+async function verificarAdminGuardado() {
+
+    const correcto =
+        await cargarPerfilAdmin();
+
+
+    if (correcto) {
+
+        mostrarPanelAdmin();
+
+        await cargarPedidosAdmin();
+
+    }
+
+}
+
+
+/* ========================================================
+   PANEL
+======================================================== */
+
+function mostrarPanelAdmin() {
+
+    document.getElementById(
+        "vistaLogin"
+    ).classList.add(
+        "d-none"
+    );
+
+
+    document.getElementById(
+        "vistaPanel"
+    ).classList.remove(
+        "d-none"
+    );
+
+
+    const nombre =
+        usuarioAdmin.nombre ||
+        usuarioAdmin.nombre_completo ||
+        "Administrador";
+
+
+    document.getElementById(
+        "nombreAdmin"
+    ).textContent =
+        nombre;
+
+}
+
+
+/* ========================================================
+   PEDIDOS
+======================================================== */
+
+async function cargarPedidosAdmin() {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    const cargando =
+        document.getElementById(
+            "cargandoAdmin"
+        );
+
+
+    const lista =
+        document.getElementById(
+            "listaPedidosAdmin"
+        );
+
+
+    const sinPedidos =
+        document.getElementById(
+            "sinPedidosAdmin"
+        );
+
+
+    cargando.classList.remove(
+        "d-none"
+    );
+
+
+    lista.innerHTML = "";
+
+
+    sinPedidos.classList.add(
+        "d-none"
+    );
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/pedidos",
+                {
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        cargando.classList.add(
+            "d-none"
+        );
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            throw new Error(
+                datos.mensaje ||
+                "No se pudieron cargar los pedidos."
+            );
+
+        }
+
+
+        if (
+            !datos.pedidos ||
+            datos.pedidos.length === 0
+        ) {
+
+            sinPedidos.classList.remove(
+                "d-none"
+            );
+
+            actualizarContadores(
+                []
+            );
+
+            return;
+
+        }
+
+
+        actualizarContadores(
+            datos.pedidos
+        );
+
+
+        renderizarPedidosAdmin(
+            datos.pedidos
+        );
+
+
+    } catch (error) {
+
+        cargando.classList.add(
+            "d-none"
+        );
+
+        alert(
+            error.message
+        );
+
+    }
+
+}
+/* ========================================================
+   CONTADORES
+======================================================== */
+
+function actualizarContadores(pedidos) {
+
+    let recibidos = 0;
+    let preparando = 0;
+    let camino = 0;
+    let entregados = 0;
+
+
+    pedidos.forEach(pedido => {
+
+        switch (pedido.estado.codigo) {
+
+            case "REGISTRADO":
+                recibidos++;
+                break;
+
+            case "PREPARANDO":
+                preparando++;
+                break;
+
+            case "EN_RUTA":
+                camino++;
+                break;
+
+            case "ENTREGADO":
+                entregados++;
+                break;
+        }
+
+    });
+
+
+    document.getElementById(
+        "totalRecibidos"
+    ).textContent = recibidos;
+
+
+    document.getElementById(
+        "totalPreparando"
+    ).textContent = preparando;
+
+
+    document.getElementById(
+        "totalCamino"
+    ).textContent = camino;
+
+
+    document.getElementById(
+        "totalEntregados"
+    ).textContent = entregados;
+
+}
+/* ========================================================
+   RENDERIZAR PEDIDOS
+======================================================== */
+
+function renderizarPedidosAdmin(pedidos) {
+
+    const contenedor =
+        document.getElementById(
+            "listaPedidosAdmin"
+        );
+
+
+    contenedor.innerHTML = "";
+
+
+    pedidos.forEach(pedido => {
+
+        const productos =
+            pedido.productos
+                .map(producto => `
+                    <div class="producto-admin">
+
+                        <span>
+                            ${producto.cantidad}
+                            ×
+                            ${escaparHtmlAdmin(
+                                producto.nombre
+                            )}
+                        </span>
+
+                        <strong>
+                            S/
+                            ${Number(
+                                producto.subtotal
+                            ).toFixed(2)}
+                        </strong>
+
+                    </div>
+                `)
+                .join("");
+
+
+        const accion =
+            obtenerAccionPedido(
+                pedido.estado.codigo
+            );
+
+
+        contenedor.innerHTML += `
+            <div class="col-12 col-lg-6">
+
+                <div class="pedido-admin-card">
+
+                    <div
+                        class="
+                            d-flex
+                            justify-content-between
+                            align-items-start
+                            gap-3
+                        "
+                    >
+
+                        <div>
+
+                            <div class="codigo-admin">
+                                ${escaparHtmlAdmin(
+                                    pedido.codigo
+                                )}
+                            </div>
+
+                            <small class="text-secondary">
+                                ${formatearFechaAdmin(
+                                    pedido.fecha_pedido
+                                )}
+                            </small>
+
+                        </div>
+
+                        <span class="estado-admin">
+                            ${accion.estadoVisible}
+                        </span>
+
+                    </div>
+
+
+                    <div class="cliente-admin">
+
+                        <strong>
+                            ${escaparHtmlAdmin(
+                                pedido.destinatario_nombre
+                            )}
+                        </strong>
+
+                        <div class="small mt-1">
+                            📞
+                            ${escaparHtmlAdmin(
+                                pedido.destinatario_telefono
+                            )}
+                        </div>
+
+                        <div class="small mt-2">
+
+                            ${
+                                pedido.latitud_destino !== null &&
+                                pedido.longitud_destino !== null
+
+                                    ? `
+                                        <a
+                                            class="link-mapa-admin"
+                                            href="https://www.google.com/maps/search/?api=1&query=${pedido.latitud_destino},${pedido.longitud_destino}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            📍
+                                            ${escaparHtmlAdmin(
+                                                pedido.direccion_destino
+                                            )}
+                                        </a>
+                                    `
+
+                                    : `
+                                        <span class="text-secondary">
+                                            📍
+                                            ${escaparHtmlAdmin(
+                                                pedido.direccion_destino
+                                            )}
+                                        </span>
+                                    `
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="productos-admin">
+
+                        ${productos}
+
+                    </div>
+
+
+                    <div
+                        class="
+                            d-flex
+                            justify-content-between
+                            mb-2
+                        "
+                    >
+
+                        <span>
+                            Delivery
+                        </span>
+
+                        <strong>
+                            S/
+                            ${Number(
+                                pedido.costo_delivery
+                            ).toFixed(2)}
+                        </strong>
+
+                    </div>
+
+
+                    <div
+                        class="
+                            d-flex
+                            justify-content-between
+                            align-items-center
+                            mb-3
+                        "
+                    >
+
+                        <strong>
+                            Total
+                        </strong>
+
+                        <span class="total-admin">
+                            S/
+                            ${Number(
+                                pedido.total
+                            ).toFixed(2)}
+                        </span>
+
+                    </div>
+
+
+                    <div class="small text-secondary mb-3">
+
+                        ⏱ Preparación:
+                        ${pedido.tiempo_preparacion_estimado_min ?? "--"}
+                        min
+
+                        ·
+
+                        🚗 Ruta:
+                        ${pedido.duracion_estimada_min ?? "--"}
+                        min
+
+                    </div>
+
+
+                    ${
+                        pedido.indicaciones_entrega
+                            ? `
+                                <div
+                                    class="
+                                        alert
+                                        alert-light
+                                        border
+                                        small
+                                    "
+                                >
+                                    <strong>
+                                        Indicaciones:
+                                    </strong>
+
+                                    ${escaparHtmlAdmin(
+                                        pedido.indicaciones_entrega
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
+
+
+                    ${
+                        accion.siguienteEstado
+                            ? `
+                                <button
+                                    class="btn-siguiente"
+                                    onclick="
+                                        cambiarEstadoPedido(
+                                            ${pedido.id},
+                                            '${accion.siguienteEstado}'
+                                        )
+                                    "
+                                >
+                                    ${accion.textoBoton}
+                                </button>
+                            `
+                            : `
+                                <button
+                                    class="btn-siguiente"
+                                    disabled
+                                >
+                                    ✓ Pedido entregado
+                                </button>
+                            `
+                    }
+
+                </div>
+
+            </div>
+        `;
+
+    });
+
+}
+/* ========================================================
+   FLUJO SIMPLIFICADO
+======================================================== */
+
+function obtenerAccionPedido(estado) {
+
+    switch (estado) {
+
+        case "REGISTRADO":
+
+            return {
+                estadoVisible:
+                    "Pedido recibido",
+
+                siguienteEstado:
+                    "PREPARANDO",
+
+                textoBoton:
+                    "Iniciar preparación"
+            };
+
+
+        case "PREPARANDO":
+
+            return {
+                estadoVisible:
+                    "En preparación",
+
+                siguienteEstado:
+                    "EN_RUTA",
+
+                textoBoton:
+                    "Enviar pedido"
+            };
+
+
+        case "EN_RUTA":
+
+            return {
+                estadoVisible:
+                    "En camino",
+
+                siguienteEstado:
+                    "ENTREGADO",
+
+                textoBoton:
+                    "Marcar como entregado"
+            };
+
+
+        case "ENTREGADO":
+
+            return {
+                estadoVisible:
+                    "Entregado",
+
+                siguienteEstado:
+                    null,
+
+                textoBoton:
+                    null
+            };
+
+
+        default:
+
+            return {
+                estadoVisible:
+                    estado,
+
+                siguienteEstado:
+                    null,
+
+                textoBoton:
+                    null
+            };
+    }
+
+}
+/* ========================================================
+   CAMBIAR ESTADO
+======================================================== */
+
+async function cambiarEstadoPedido(
+    pedidoId,
+    nuevoEstado
+) {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    if (!token) {
+        return;
+    }
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                `/api/pedidos/${pedidoId}/estado`,
+                {
+                    method: "PATCH",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+
+                        "Authorization":
+                            `Bearer ${token}`
+                    },
+
+                    body:
+                        JSON.stringify({
+                            estado:
+                                nuevoEstado
+                        })
+                }
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            alert(
+                datos.mensaje ||
+                "No se pudo actualizar el pedido."
+            );
+
+            return;
+        }
+
+
+        await cargarPedidosAdmin();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "No se pudo conectar con el servidor."
+        );
+
+    }
+
+}
+/* ========================================================
+   UTILIDADES
+======================================================== */
+
+function formatearFechaAdmin(fecha) {
+
+    if (!fecha) {
+        return "";
+    }
+
+
+    return new Date(fecha)
+        .toLocaleString(
+            "es-PE",
+            {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+            }
+        );
+
+}
+
+
+function escaparHtmlAdmin(texto) {
+
+    const elemento =
+        document.createElement(
+            "div"
+        );
+
+
+    elemento.textContent =
+        texto ?? "";
+
+
+    return elemento.innerHTML;
+
+}
+
+
+/* ========================================================
+   CERRAR SESIÓN
+======================================================== */
+
+function cerrarSesionAdmin() {
+
+    localStorage.removeItem(
+        "kimbos_admin_token"
+    );
+
+
+    usuarioAdmin = null;
+
+
+    document.getElementById(
+        "vistaPanel"
+    ).classList.add(
+        "d-none"
+    );
+
+
+    document.getElementById(
+        "vistaLogin"
+    ).classList.remove(
+        "d-none"
+    );
+
+
+    document.getElementById(
+        "formAdminLogin"
+    ).reset();
+
+}
+/* ========================================================
+   PRODUCTOS
+======================================================== */
+
+async function cargarProductosAdmin() {
+
+    const cargando =
+        document.getElementById(
+            "cargandoProductosAdmin"
+        );
+
+    const lista =
+        document.getElementById(
+            "listaProductosAdmin"
+        );
+
+
+    cargando.classList.remove(
+        "d-none"
+    );
+
+    lista.innerHTML = "";
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/catalogo"
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        cargando.classList.add(
+            "d-none"
+        );
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            throw new Error(
+                "No se pudieron cargar los productos."
+            );
+
+        }
+
+
+        catalogoAdmin =
+            datos.categorias;
+
+
+        llenarCategoriasProducto();
+
+
+        renderizarProductosAdmin();
+
+
+    } catch (error) {
+
+        cargando.classList.add(
+            "d-none"
+        );
+
+
+        lista.innerHTML = `
+            <div class="alert alert-danger">
+                ${error.message}
+            </div>
+        `;
+
+    }
+
+}
+function renderizarProductosAdmin() {
+
+    const lista =
+        document.getElementById(
+            "listaProductosAdmin"
+        );
+
+
+    lista.innerHTML = "";
+
+
+    let cantidadProductos =
+        0;
+
+
+    catalogoAdmin.forEach(
+        categoria => {
+
+            categoria.productos.forEach(
+                producto => {
+
+                    cantidadProductos++;
+
+
+                    const estado =
+                        producto.disponible
+                            ? `
+                                <span class="estado-disponible">
+                                    ● Disponible
+                                </span>
+                            `
+                            : `
+                                <span class="estado-agotado">
+                                    ● Agotado
+                                </span>
+                            `;
+
+
+                    const botonDisponibilidad =
+                        producto.disponible
+                            ? `
+                                <button
+                                    class="
+                                        btn-disponibilidad
+                                        btn-marcar-agotado
+                                    "
+                                    onclick="
+                                        cambiarDisponibilidadProducto(
+                                            ${producto.id},
+                                            false
+                                        )
+                                    "
+                                >
+                                    Marcar agotado
+                                </button>
+                            `
+                            : `
+                                <button
+                                    class="
+                                        btn-disponibilidad
+                                        btn-marcar-disponible
+                                    "
+                                    onclick="
+                                        cambiarDisponibilidadProducto(
+                                            ${producto.id},
+                                            true
+                                        )
+                                    "
+                                >
+                                    Marcar disponible
+                                </button>
+                            `;
+
+
+                    lista.innerHTML += `
+                        <div class="producto-gestion">
+
+                            <div>
+
+                                <small class="text-secondary">
+                                    ${escaparHtmlAdmin(
+                                        categoria.nombre
+                                    )}
+                                </small>
+
+
+                                <h6>
+                                    ${escaparHtmlAdmin(
+                                        producto.nombre
+                                    )}
+                                </h6>
+
+
+                                <div class="text-secondary small">
+                                    ${escaparHtmlAdmin(
+                                        producto.descripcion ||
+                                        "Sin descripción"
+                                    )}
+                                </div>
+
+
+                                <div class="mt-2">
+
+                                    <span class="producto-precio-admin">
+                                        S/
+                                        ${Number(
+                                            producto.precio
+                                        ).toFixed(2)}
+                                    </span>
+
+                                    <span class="text-secondary ms-2">
+                                        ⏱
+                                        ${producto.tiempo_preparacion_min}
+                                        min
+                                    </span>
+
+                                </div>
+
+
+                                <div class="mt-2">
+                                    ${estado}
+                                </div>
+
+                            </div>
+
+
+                            <div class="acciones-producto">
+
+                                ${botonDisponibilidad}
+
+
+                                ${
+                                    usuarioAdmin &&
+                                    usuarioAdmin.rol === "ADMIN"
+                                        ? `
+                                            <button
+                                                class="btn-editar-producto"
+                                                onclick="
+                                                    editarProductoAdmin(
+                                                        ${producto.id}
+                                                    )
+                                                "
+                                            >
+                                                ✏ Editar
+                                            </button>
+
+
+                                            <button
+                                                class="btn-desactivar-producto"
+                                                onclick="
+                                                    desactivarProductoAdmin(
+                                                        ${producto.id}
+                                                    )
+                                                "
+                                            >
+                                                Desactivar
+                                            </button>
+                                        `
+                                        : ""
+                                }
+
+                            </div>
+
+                        </div>
+                    `;
+
+                }
+            );
+
+        }
+    );
+
+
+    if (cantidadProductos === 0) {
+
+        lista.innerHTML = `
+            <div class="text-center py-5">
+
+                <div style="font-size: 3rem;">
+                    🍔
+                </div>
+
+                <h5 class="mt-3">
+                    No existen productos
+                </h5>
+
+            </div>
+        `;
+
+    }
+
+}
+async function cambiarDisponibilidadProducto(
+    productoId,
+    disponible
+) {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                `/api/catalogo/productos/${productoId}/disponibilidad`,
+                {
+                    method: "PATCH",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+
+                        "Authorization":
+                            `Bearer ${token}`
+                    },
+
+                    body:
+                        JSON.stringify({
+                            disponible
+                        })
+                }
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            alert(
+                datos.mensaje ||
+                "No se pudo cambiar la disponibilidad."
+            );
+
+            return;
+
+        }
+
+
+        await cargarProductosAdmin();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "No se pudo conectar con el servidor."
+        );
+
+    }
+
+}
+function llenarCategoriasProducto() {
+
+    const select =
+        document.getElementById(
+            "productoCategoria"
+        );
+
+
+    select.innerHTML = "";
+
+
+    catalogoAdmin.forEach(
+        categoria => {
+
+            select.innerHTML += `
+                <option value="${categoria.id}">
+                    ${escaparHtmlAdmin(
+                        categoria.nombre
+                    )}
+                </option>
+            `;
+
+        }
+    );
+
+}
+function abrirNuevoProducto() {
+
+    document.getElementById(
+        "productoId"
+    ).value = "";
+
+
+    document.getElementById(
+        "tituloFormularioProducto"
+    ).textContent =
+        "Nuevo producto";
+
+
+    document.getElementById(
+        "productoNombre"
+    ).value = "";
+
+
+    document.getElementById(
+        "productoDescripcion"
+    ).value = "";
+
+
+    document.getElementById(
+        "productoPrecio"
+    ).value = "";
+
+
+    document.getElementById(
+        "productoPreparacion"
+    ).value = 15;
+
+
+    document.getElementById(
+        "productoImagen"
+    ).value = "";
+
+
+    document.getElementById(
+        "panelFormularioProducto"
+    ).classList.remove(
+        "d-none"
+    );
+
+}
+function editarProductoAdmin(
+    productoId
+) {
+
+    let productoEncontrado =
+        null;
+
+    let categoriaEncontrada =
+        null;
+
+
+    catalogoAdmin.forEach(
+        categoria => {
+
+            const producto =
+                categoria.productos.find(
+                    p =>
+                        p.id === productoId
+                );
+
+
+            if (producto) {
+
+                productoEncontrado =
+                    producto;
+
+                categoriaEncontrada =
+                    categoria;
+
+            }
+
+        }
+    );
+
+
+    if (!productoEncontrado) {
+        return;
+    }
+
+
+    document.getElementById(
+        "productoId"
+    ).value =
+        productoEncontrado.id;
+
+
+    document.getElementById(
+        "tituloFormularioProducto"
+    ).textContent =
+        "Editar producto";
+
+
+    document.getElementById(
+        "productoNombre"
+    ).value =
+        productoEncontrado.nombre;
+
+
+    document.getElementById(
+        "productoDescripcion"
+    ).value =
+        productoEncontrado.descripcion || "";
+
+
+    document.getElementById(
+        "productoCategoria"
+    ).value =
+        categoriaEncontrada.id;
+
+
+    document.getElementById(
+        "productoPrecio"
+    ).value =
+        productoEncontrado.precio;
+
+
+    document.getElementById(
+        "productoPreparacion"
+    ).value =
+        productoEncontrado.tiempo_preparacion_min;
+
+
+    document.getElementById(
+        "productoImagen"
+    ).value =
+        productoEncontrado.imagen_url || "";
+
+
+    document.getElementById(
+        "panelFormularioProducto"
+    ).classList.remove(
+        "d-none"
+    );
+
+
+    document.getElementById(
+        "panelFormularioProducto"
+    ).scrollIntoView({
+        behavior: "smooth"
+    });
+
+}
+function cerrarFormularioProducto() {
+
+    document.getElementById(
+        "panelFormularioProducto"
+    ).classList.add(
+        "d-none"
+    );
+
+}
+async function guardarProductoAdmin() {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    const productoId =
+        document.getElementById(
+            "productoId"
+        ).value;
+
+
+    const datos = {
+
+        categoria_id:
+            Number(
+                document.getElementById(
+                    "productoCategoria"
+                ).value
+            ),
+
+        nombre:
+            document.getElementById(
+                "productoNombre"
+            ).value.trim(),
+
+        descripcion:
+            document.getElementById(
+                "productoDescripcion"
+            ).value.trim(),
+
+        precio:
+            Number(
+                document.getElementById(
+                    "productoPrecio"
+                ).value
+            ),
+
+        tiempo_preparacion_min:
+            Number(
+                document.getElementById(
+                    "productoPreparacion"
+                ).value
+            ),
+
+        imagen_url:
+            document.getElementById(
+                "productoImagen"
+            ).value.trim()
+    };
+
+
+    if (!datos.nombre) {
+
+        alert(
+            "Ingresa el nombre del producto."
+        );
+
+        return;
+
+    }
+
+
+    if (
+        !Number.isFinite(datos.precio) ||
+        datos.precio < 0
+    ) {
+
+        alert(
+            "Ingresa un precio válido."
+        );
+
+        return;
+
+    }
+
+
+    const editando =
+        productoId !== "";
+
+
+    const url =
+        editando
+            ? `/api/catalogo/productos/${productoId}`
+            : "/api/catalogo/productos";
+
+
+    const metodo =
+        editando
+            ? "PATCH"
+            : "POST";
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                url,
+                {
+                    method:
+                        metodo,
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+
+                        "Authorization":
+                            `Bearer ${token}`
+                    },
+
+                    body:
+                        JSON.stringify(
+                            datos
+                        )
+                }
+            );
+
+
+        const resultado =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !resultado.ok
+        ) {
+
+            alert(
+                resultado.mensaje ||
+                "No se pudo guardar el producto."
+            );
+
+            return;
+
+        }
+
+
+        cerrarFormularioProducto();
+
+
+        await cargarProductosAdmin();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "No se pudo conectar con el servidor."
+        );
+
+    }
+
+}
+function mostrarNuevaCategoria() {
+
+    document.getElementById(
+        "panelNuevaCategoria"
+    ).classList.remove(
+        "d-none"
+    );
+
+}
+
+
+function ocultarNuevaCategoria() {
+
+    document.getElementById(
+        "panelNuevaCategoria"
+    ).classList.add(
+        "d-none"
+    );
+
+}
+async function guardarCategoriaAdmin() {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    const nombre =
+        document.getElementById(
+            "categoriaNombre"
+        ).value.trim();
+
+
+    if (!nombre) {
+
+        alert(
+            "Ingresa el nombre de la categoría."
+        );
+
+        return;
+
+    }
+
+
+    const datos = {
+
+        nombre,
+
+        descripcion:
+            document.getElementById(
+                "categoriaDescripcion"
+            ).value.trim(),
+
+        orden:
+            Number(
+                document.getElementById(
+                    "categoriaOrden"
+                ).value
+            ) || 0
+    };
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/catalogo/categorias",
+                {
+                    method:
+                        "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+
+                        "Authorization":
+                            `Bearer ${token}`
+                    },
+
+                    body:
+                        JSON.stringify(
+                            datos
+                        )
+                }
+            );
+
+
+        const resultado =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !resultado.ok
+        ) {
+
+            alert(
+                resultado.mensaje ||
+                "No se pudo crear la categoría."
+            );
+
+            return;
+
+        }
+
+
+        document.getElementById(
+            "categoriaNombre"
+        ).value = "";
+
+
+        document.getElementById(
+            "categoriaDescripcion"
+        ).value = "";
+
+
+        ocultarNuevaCategoria();
+
+
+        await cargarProductosAdmin();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "No se pudo conectar con el servidor."
+        );
+
+    }
+
+}
+async function desactivarProductoAdmin(
+    productoId
+) {
+
+    const confirmar =
+        confirm(
+            "¿Deseas desactivar este producto? Ya no aparecerá en el menú del cliente."
+        );
+
+
+    if (!confirmar) {
+        return;
+    }
+
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+
+    try {
+
+        const respuesta =
+            await fetch(
+                `/api/catalogo/productos/${productoId}/desactivar`,
+                {
+                    method:
+                        "PATCH",
+
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+
+        const datos =
+            await respuesta.json();
+
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            alert(
+                datos.mensaje ||
+                "No se pudo desactivar el producto."
+            );
+
+            return;
+
+        }
+
+
+        await cargarProductosAdmin();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "No se pudo conectar con el servidor."
+        );
+
+    }
+
+}

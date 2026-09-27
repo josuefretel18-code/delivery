@@ -1,0 +1,2 @@
+ALTER TABLE sedes
+ADD COLUMN IF NOT EXISTS negocio_nombre VARCHAR(120);
