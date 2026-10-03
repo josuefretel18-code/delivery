@@ -1,5 +1,7 @@
+import json
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request, g
 
@@ -1613,4 +1615,188 @@ def actualizar_estado_pedido(pedido_id):
                 "nombre": nuevo_estado_nombre
             }
         }
+    })
+
+# =========================================================
+# DASHBOARD ML
+# ADMIN / OPERADOR
+# =========================================================
+
+RUTA_METRICAS_ML = (
+    Path(__file__).resolve().parents[2]
+    / "ml"
+    / "metrics"
+    / "metricas.json"
+)
+
+
+def _dividir(numerador, denominador):
+
+    return (
+        round(numerador / denominador, 4)
+        if denominador
+        else None
+    )
+
+
+@pedidos_bp.get("/ml/resumen")
+@roles_required("ADMIN", "OPERADOR")
+def resumen_ml():
+
+    # -----------------------------------------
+    # Evaluación del modelo (metricas.json)
+    # -----------------------------------------
+
+    modelo = None
+
+    if RUTA_METRICAS_ML.exists():
+
+        metricas = json.loads(
+            RUTA_METRICAS_ML.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        seleccionado = metricas[
+            "modelo_seleccionado"
+        ]
+
+        resultado = metricas["resultados"][
+            seleccionado
+        ]
+
+        modelo = {
+            "nombre": seleccionado,
+            "version": metricas.get("version_modelo"),
+            "criterio": metricas.get("criterio_seleccion"),
+            "fecha_entrenamiento": metricas.get(
+                "fecha_entrenamiento_utc"
+            ),
+            "dataset": metricas.get("dataset"),
+            "variables": metricas.get("variables", []),
+
+            "accuracy": resultado["accuracy_test"],
+            "precision": resultado["precision_test"],
+            "recall": resultado["recall_test"],
+            "f1": resultado["f1_test"],
+            "roc_auc": resultado["roc_auc_test"],
+            "matriz_confusion": resultado["matriz_confusion"],
+
+            "comparacion": [
+                {
+                    "modelo": nombre,
+                    "f1_cv": datos["f1_cv_promedio"],
+                    "accuracy": datos["accuracy_test"],
+                    "precision": datos["precision_test"],
+                    "recall": datos["recall_test"],
+                    "f1": datos["f1_test"],
+                    "roc_auc": datos["roc_auc_test"]
+                }
+                for nombre, datos
+                in metricas["resultados"].items()
+            ]
+        }
+
+
+    # -----------------------------------------
+    # Rendimiento en pedidos reales
+    # -----------------------------------------
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    pm.clase_predicha,
+                    p.retraso,
+                    p.duracion_real_min
+
+                FROM pedidos p
+
+                LEFT JOIN LATERAL (
+
+                    SELECT clase_predicha
+
+                    FROM predicciones_ml
+
+                    WHERE pedido_id = p.id
+
+                    ORDER BY id DESC
+
+                    LIMIT 1
+
+                ) pm ON TRUE
+
+                WHERE COALESCE(
+                    p.fuente_datos,
+                    'REAL'
+                ) = 'REAL';
+            """)
+
+            filas = cur.fetchall()
+
+
+    con_prediccion = [
+        fila for fila in filas
+        if fila[0] is not None
+    ]
+
+    evaluados = [
+        fila for fila in con_prediccion
+        if fila[1] is not None
+        and fila[2] is not None
+    ]
+
+    # Filas = real (0 A_TIEMPO, 1 RETRASADO)
+    # Columnas = predicho (0 A_TIEMPO, 1 RETRASADO)
+    matriz = [[0, 0], [0, 0]]
+
+    for clase_predicha, retraso, _ in evaluados:
+
+        real = 1 if retraso else 0
+        predicho = 1 if clase_predicha == "RETRASADO" else 0
+
+        matriz[real][predicho] += 1
+
+    vn, fp = matriz[0]
+    fn, vp = matriz[1]
+
+    correctas = vn + vp
+    precision = _dividir(vp, vp + fp)
+    recall = _dividir(vp, vp + fn)
+
+    reales = {
+        "pedidos_reales": len(filas),
+        "con_prediccion": len(con_prediccion),
+        "evaluados": len(evaluados),
+        "pendientes": len(con_prediccion) - len(evaluados),
+
+        "correctas": correctas,
+        "incorrectas": len(evaluados) - correctas,
+
+        "predichos_a_tiempo": vn + fn,
+        "predichos_retrasado": fp + vp,
+        "reales_a_tiempo": vn + fp,
+        "reales_retrasados": fn + vp,
+
+        "matriz_confusion": matriz,
+
+        "accuracy": _dividir(correctas, len(evaluados)),
+        "precision": precision,
+        "recall": recall,
+        "f1": (
+            _dividir(
+                2 * vp,
+                2 * vp + fp + fn
+            )
+            if precision is not None
+            and recall is not None
+            else None
+        )
+    }
+
+    return jsonify({
+        "ok": True,
+        "modelo": modelo,
+        "reales": reales
     })

@@ -192,6 +192,16 @@
     </button>
 
     <button
+        id="btnDashboardML"
+        class="btn btn-outline-dark"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalDashboardML"
+    >
+        🤖 Dashboard ML
+    </button>
+
+    <button
         id="btnActualizarPedidos"
         class="btn btn-dark"
     >
@@ -344,6 +354,58 @@
 <!-- ============================================
      GESTIÓN DE PRODUCTOS
 ============================================= -->
+
+<!-- DASHBOARD ML -->
+
+<div
+    class="modal fade"
+    id="modalDashboardML"
+    tabindex="-1"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+
+                <div>
+                    <h4 class="fw-bold mb-1">
+                        Dashboard de Machine Learning
+                    </h4>
+
+                    <p class="text-secondary mb-0">
+                        Predicción de retrasos: evaluación del modelo y resultados en pedidos reales.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                ></button>
+
+            </div>
+
+
+            <div class="modal-body">
+
+                <div
+                    id="cargandoDashboardML"
+                    class="text-center text-secondary py-5 d-none"
+                >
+                    Cargando métricas...
+                </div>
+
+                <div id="contenidoDashboardML"></div>
+
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
 
 <div
     class="modal fade"

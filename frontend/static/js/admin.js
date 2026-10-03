@@ -47,6 +47,12 @@ document.addEventListener(
             cargarProductosAdmin
         );
         document.getElementById(
+            "btnDashboardML"
+        ).addEventListener(
+            "click",
+            cargarDashboardML
+        );
+        document.getElementById(
             "btnNuevoProducto"
         ).addEventListener(
             "click",
@@ -480,6 +486,330 @@ function cambiarFiltroFuente(fuente) {
     });
 
     cargarPedidosAdmin();
+
+}
+/* ========================================================
+   DASHBOARD ML
+======================================================== */
+
+async function cargarDashboardML() {
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+    const cargando =
+        document.getElementById(
+            "cargandoDashboardML"
+        );
+
+    const contenido =
+        document.getElementById(
+            "contenidoDashboardML"
+        );
+
+    cargando.classList.remove("d-none");
+    contenido.innerHTML = "";
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/pedidos/ml/resumen",
+                {
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+        const datos =
+            await respuesta.json();
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            throw new Error(
+                datos.mensaje ||
+                "No se pudo cargar el dashboard ML."
+            );
+
+        }
+
+        renderizarDashboardML(datos);
+
+    } catch (error) {
+
+        contenido.innerHTML = `
+            <div class="alert alert-danger">
+                ${escaparHtmlAdmin(error.message)}
+            </div>
+        `;
+
+    } finally {
+
+        cargando.classList.add("d-none");
+
+    }
+
+}
+
+
+function porcentajeML(valor) {
+
+    return valor === null || valor === undefined
+        ? "--"
+        : `${(valor * 100).toFixed(1)}%`;
+
+}
+
+
+function tarjetaMetricaML(titulo, valor, ayuda) {
+
+    return `
+        <div class="col-6 col-lg">
+            <div class="metrica-ml-card">
+                <small>${titulo}</small>
+                <strong>${valor}</strong>
+                <span>${ayuda}</span>
+            </div>
+        </div>
+    `;
+
+}
+
+
+function matrizConfusionML(matriz) {
+
+    const [[vn, fp], [fn, vp]] = matriz;
+
+    return `
+        <div class="matriz-ml">
+
+            <div></div>
+            <div class="matriz-ml-eje">Predijo A tiempo</div>
+            <div class="matriz-ml-eje">Predijo Retrasado</div>
+
+            <div class="matriz-ml-eje">Real A tiempo</div>
+            <div class="matriz-ml-celda acierto">
+                <strong>${vn}</strong>
+                <span>Acierto</span>
+            </div>
+            <div class="matriz-ml-celda error">
+                <strong>${fp}</strong>
+                <span>Falsa alarma</span>
+            </div>
+
+            <div class="matriz-ml-eje">Real Retrasado</div>
+            <div class="matriz-ml-celda error">
+                <strong>${fn}</strong>
+                <span>Retraso no detectado</span>
+            </div>
+            <div class="matriz-ml-celda acierto">
+                <strong>${vp}</strong>
+                <span>Retraso detectado</span>
+            </div>
+
+        </div>
+    `;
+
+}
+
+
+function renderizarDashboardML(datos) {
+
+    const modelo = datos.modelo;
+    const reales = datos.reales;
+
+    let html = "";
+
+
+    // ---------- Evaluación del modelo ----------
+
+    if (modelo) {
+
+        const comparacion =
+            modelo.comparacion
+                .map(fila => `
+                    <tr class="${fila.modelo === modelo.nombre ? "fila-ml-seleccionada" : ""}">
+                        <td>
+                            ${escaparHtmlAdmin(fila.modelo)}
+                            ${fila.modelo === modelo.nombre ? " ✓" : ""}
+                        </td>
+                        <td>${fila.f1_cv.toFixed(3)}</td>
+                        <td>${porcentajeML(fila.accuracy)}</td>
+                        <td>${porcentajeML(fila.precision)}</td>
+                        <td>${porcentajeML(fila.recall)}</td>
+                        <td>${fila.f1.toFixed(3)}</td>
+                        <td>${fila.roc_auc.toFixed(3)}</td>
+                    </tr>
+                `)
+                .join("");
+
+        html += `
+            <section class="seccion-ml">
+
+                <h5 class="fw-bold mb-1">
+                    1. Evaluación del modelo
+                </h5>
+
+                <p class="text-secondary small mb-3">
+                    ${escaparHtmlAdmin(modelo.nombre)}
+                    ${escaparHtmlAdmin(modelo.version || "")}
+                    · Prueba con ${modelo.dataset.registros_prueba}
+                    de ${modelo.dataset.registros_totales} registros sintéticos
+                    · ${escaparHtmlAdmin(modelo.criterio || "")}
+                </p>
+
+                <div class="row g-3 mb-4">
+                    ${tarjetaMetricaML("Accuracy", porcentajeML(modelo.accuracy), "Predicciones correctas del total")}
+                    ${tarjetaMetricaML("Precision", porcentajeML(modelo.precision), "Cuando avisa retraso, acierta")}
+                    ${tarjetaMetricaML("Recall", porcentajeML(modelo.recall), "Retrasos reales que detecta")}
+                    ${tarjetaMetricaML("F1-score", modelo.f1.toFixed(3), "Balance precision / recall")}
+                    ${tarjetaMetricaML("ROC-AUC", modelo.roc_auc.toFixed(3), "Capacidad de separar clases")}
+                </div>
+
+                <div class="row g-4 align-items-start">
+
+                    <div class="col-lg-5">
+                        <h6 class="fw-bold">Matriz de confusión</h6>
+                        ${matrizConfusionML(modelo.matriz_confusion)}
+                    </div>
+
+                    <div class="col-lg-7">
+                        <h6 class="fw-bold">Comparación de modelos</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm tabla-ml">
+                                <thead>
+                                    <tr>
+                                        <th>Modelo</th>
+                                        <th>F1 CV</th>
+                                        <th>Accuracy</th>
+                                        <th>Precision</th>
+                                        <th>Recall</th>
+                                        <th>F1</th>
+                                        <th>ROC-AUC</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${comparacion}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+            </section>
+        `;
+
+    } else {
+
+        html += `
+            <div class="alert alert-warning">
+                No se encontró ml/metrics/metricas.json.
+                Ejecuta el entrenamiento del modelo.
+            </div>
+        `;
+
+    }
+
+
+    // ---------- Pedidos reales ----------
+
+    html += `
+        <section class="seccion-ml">
+
+            <h5 class="fw-bold mb-1">
+                2. Rendimiento en pedidos reales
+            </h5>
+
+            <p class="text-secondary small mb-3">
+                ${reales.pedidos_reales} pedidos reales
+                · ${reales.con_prediccion} con predicción
+                · ${reales.evaluados} entregados y evaluados
+                · ${reales.pendientes} pendientes de entrega
+            </p>
+    `;
+
+    if (reales.evaluados === 0) {
+
+        html += `
+            <div class="alert alert-light border">
+                Aún no hay pedidos reales con predicción y resultado real.
+            </div>
+        `;
+
+    } else {
+
+        html += `
+            ${
+                reales.evaluados < 30
+                    ? `
+                        <div class="alert alert-warning small">
+                            Solo ${reales.evaluados} pedido(s) evaluado(s).
+                            Con tan pocos datos estas cifras no son concluyentes.
+                        </div>
+                    `
+                    : ""
+            }
+
+            <div class="row g-3 mb-4">
+                ${tarjetaMetricaML("Correctas", reales.correctas, "Predicción = resultado real")}
+                ${tarjetaMetricaML("Incorrectas", reales.incorrectas, "Predicción ≠ resultado real")}
+                ${tarjetaMetricaML("Accuracy", porcentajeML(reales.accuracy), "Aciertos sobre evaluados")}
+                ${tarjetaMetricaML("A tiempo (real)", reales.reales_a_tiempo, `Predichos: ${reales.predichos_a_tiempo}`)}
+                ${tarjetaMetricaML("Retrasados (real)", reales.reales_retrasados, `Predichos: ${reales.predichos_retrasado}`)}
+            </div>
+
+            <div class="row g-4 align-items-start">
+
+                <div class="col-lg-5">
+                    <h6 class="fw-bold">Matriz de confusión</h6>
+                    ${matrizConfusionML(reales.matriz_confusion)}
+                </div>
+
+                <div class="col-lg-7">
+                    <div class="row g-3">
+                        ${tarjetaMetricaML(
+                            "Precision",
+                            porcentajeML(reales.precision),
+                            reales.precision === null
+                                ? "Sin datos: aún no predijo ningún retraso"
+                                : "Cuando avisa retraso, acierta"
+                        )}
+                        ${tarjetaMetricaML(
+                            "Recall",
+                            porcentajeML(reales.recall),
+                            reales.recall === null
+                                ? "Sin datos: aún no hubo retrasos reales"
+                                : "Retrasos reales que detecta"
+                        )}
+                        ${tarjetaMetricaML(
+                            "F1-score",
+                            reales.f1 === null ? "--" : reales.f1.toFixed(3),
+                            reales.f1 === null
+                                ? "Sin datos: requiere precision y recall"
+                                : "Balance precision / recall"
+                        )}
+                    </div>
+                </div>
+
+            </div>
+        `;
+
+    }
+
+    html += `</section>`;
+
+
+    document.getElementById(
+        "contenidoDashboardML"
+    ).innerHTML = html;
 
 }
 /* ========================================================
