@@ -17,3 +17,6 @@ ml/models/modelo_v*.joblib
 # Estado en tiempo de ejecucion del reentrenamiento
 ml/metrics/.reentrenando.lock
 ml/metrics/estado_reentrenamiento.json
+
+# Material personal de estudio (no forma parte de la entrega)
+docs/Guion_Presentacion_Kimbos_ML.docx
