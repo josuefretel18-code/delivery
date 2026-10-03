@@ -978,22 +978,39 @@ function renderizarDashboardML(datos) {
                     </div>
 
                     ${
-                        puedeReentrenar
+                        // Solo si hay pedidos entregados sin usar (el
+                        // automático falló o está apagado): es un respaldo.
+                        puedeReentrenar && realesNuevos > 0 && !estadoReentreno.en_curso
                             ? `
                                 <button
                                     id="btnReentrenarML"
                                     class="btn btn-dark"
                                     type="button"
                                     onclick="reentrenarModeloML()"
-                                    ${realesNuevos === 0 || estadoReentreno.en_curso ? "disabled" : ""}
                                 >
-                                    ↻ Reentrenar con datos actuales
+                                    ${textoBotonReentrenar(estadoReentreno.automatico)}
                                 </button>
                             `
                             : ""
                     }
 
                 </div>
+
+                ${
+                    puedeReentrenar && realesNuevos > 0 && !estadoReentreno.en_curso
+                        ? `
+                            <div class="alert alert-warning small">
+                                Hay <strong>${realesNuevos}</strong> pedido(s) entregado(s) que aún no
+                                se usaron para entrenar.
+                                ${
+                                    estadoReentreno.automatico
+                                        ? "El reentrenamiento automático no llegó a procesarlos: puedes reintentarlo."
+                                        : "El reentrenamiento automático está apagado: puedes entrenar manualmente."
+                                }
+                            </div>
+                        `
+                        : ""
+                }
 
                 ${
                     reentrenoDisponible
@@ -1082,6 +1099,15 @@ function renderizarDashboardML(datos) {
 }
 
 
+function textoBotonReentrenar(automatico) {
+
+    return automatico
+        ? "↻ Reintentar reentrenamiento"
+        : "↻ Reentrenar con datos actuales";
+
+}
+
+
 async function reentrenarModeloML() {
 
     if (
@@ -1101,6 +1127,8 @@ async function reentrenarModeloML() {
         document.getElementById(
             "btnReentrenarML"
         );
+
+    const textoOriginal = boton.textContent;
 
     boton.disabled = true;
     boton.textContent = "Reentrenando...";
@@ -1140,7 +1168,7 @@ async function reentrenarModeloML() {
     } catch (error) {
 
         boton.disabled = false;
-        boton.textContent = "↻ Reentrenar con datos actuales";
+        boton.textContent = textoOriginal;
 
         alert(error.message);
 
