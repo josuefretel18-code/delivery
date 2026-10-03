@@ -1002,7 +1002,6 @@ function renderizarDashboardML(datos) {
 
                 ${avisoReentreno}
 
-                <div id="resultadoReentrenoML"></div>
 
                 <div class="table-responsive">
                     <table class="table table-sm tabla-ml">
@@ -1111,15 +1110,8 @@ async function reentrenarModeloML() {
 
         }
 
+        // El resultado se muestra en "Último reentrenamiento".
         await cargarDashboardML();
-
-        document.getElementById(
-            "resultadoReentrenoML"
-        ).innerHTML = `
-            <div class="alert ${datos.resultado === "PROMOVIDO" ? "alert-success" : "alert-warning"} small">
-                ${escaparHtmlAdmin(datos.mensaje)}
-            </div>
-        `;
 
     } catch (error) {
 

@@ -28,5 +28,20 @@
         "f1": 0.6096484777173113,
         "roc_auc": 0.7483014400057455,
         "promovido": false
+    },
+    {
+        "version": "v4.0",
+        "fecha_entrenamiento_utc": "2026-10-03T16:55:11.831739+00:00",
+        "modelo": "Gradient Boosting",
+        "registros_totales": 176103,
+        "registros_externos": 176097,
+        "registros_reales": 6,
+        "f1_cv": 0.6066930604001102,
+        "accuracy": 0.698588910025269,
+        "precision": 0.5925528873642081,
+        "recall": 0.6278206875662578,
+        "f1": 0.6096771821457461,
+        "roc_auc": 0.7490183386246674,
+        "promovido": true
     }
 ]

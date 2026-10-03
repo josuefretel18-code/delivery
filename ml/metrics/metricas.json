@@ -1,11 +1,11 @@
 {
     "dataset": {
-        "registros_totales": 176101,
-        "registros_entrenamiento": 140880,
+        "registros_totales": 176103,
+        "registros_entrenamiento": 140882,
         "registros_prueba": 35221,
         "registros_externos": 176097,
-        "registros_reales": 4,
-        "a_tiempo": 110072,
+        "registros_reales": 6,
+        "a_tiempo": 110074,
         "retrasados": 66029
     },
     "variables": [
@@ -17,64 +17,64 @@
         "fin_semana",
         "carga_repartidor"
     ],
-    "modelo_seleccionado": "Random Forest",
-    "version_modelo": "v2.0",
+    "modelo_seleccionado": "Gradient Boosting",
+    "version_modelo": "v4.0",
     "criterio_seleccion": "Mayor F1 promedio en validacion cruzada",
     "resultados": {
         "Regresion Logistica": {
-            "f1_cv_promedio": 0.6028170784462004,
-            "f1_cv_desviacion": 0.004195139611905619,
-            "accuracy_test": 0.6757332273359643,
-            "precision_test": 0.5569377990430622,
-            "recall_test": 0.6610631531122217,
-            "f1_test": 0.6045497039576192,
-            "roc_auc_test": 0.7306961278070667,
+            "f1_cv_promedio": 0.6027091430120788,
+            "f1_cv_desviacion": 0.0020027480866138376,
+            "accuracy_test": 0.6757900116407825,
+            "precision_test": 0.5569943228934108,
+            "recall_test": 0.661214599424504,
+            "f1_test": 0.6046463317522418,
+            "roc_auc_test": 0.7306670974442309,
             "matriz_confusion": [
                 [
                     15070,
                     6945
                 ],
                 [
-                    4476,
-                    8730
+                    4474,
+                    8732
                 ]
             ]
         },
         "Random Forest": {
-            "f1_cv_promedio": 0.6062591774893302,
-            "f1_cv_desviacion": 0.002689654129151419,
-            "accuracy_test": 0.6995826353595866,
-            "precision_test": 0.5941467613514095,
-            "recall_test": 0.6272149023171286,
-            "f1_test": 0.610233174936457,
-            "roc_auc_test": 0.7483436922542143,
+            "f1_cv_promedio": 0.6058683841722831,
+            "f1_cv_desviacion": 0.004218448230040707,
+            "accuracy_test": 0.7000653019505408,
+            "precision_test": 0.5949403478510852,
+            "recall_test": 0.6268362865364229,
+            "f1_test": 0.6104719764011799,
+            "roc_auc_test": 0.7486667169538592,
             "matriz_confusion": [
                 [
-                    16357,
-                    5658
+                    16379,
+                    5636
                 ],
                 [
-                    4923,
-                    8283
+                    4928,
+                    8278
                 ]
             ]
         },
         "Gradient Boosting": {
-            "f1_cv_promedio": 0.6060559939916315,
-            "f1_cv_desviacion": 0.003537009329924483,
-            "accuracy_test": 0.6998949490360864,
-            "precision_test": 0.5943315201832235,
-            "recall_test": 0.6288050885960926,
-            "f1_test": 0.6110824931930238,
-            "roc_auc_test": 0.7488338823133168,
+            "f1_cv_promedio": 0.6066930604001102,
+            "f1_cv_desviacion": 0.0028443471187303516,
+            "accuracy_test": 0.698588910025269,
+            "precision_test": 0.5925528873642081,
+            "recall_test": 0.6278206875662578,
+            "f1_test": 0.6096771821457461,
+            "roc_auc_test": 0.7490183386246674,
             "matriz_confusion": [
                 [
-                    16347,
-                    5668
+                    16314,
+                    5701
                 ],
                 [
-                    4902,
-                    8304
+                    4915,
+                    8291
                 ]
             ]
         }
@@ -84,12 +84,12 @@
         "descripcion_externa": "Entregas reales de DoorDash (oct. 2014 - feb. 2015), con ruido anadido por DoorDash para anonimizar.",
         "doordash_filas_originales": 197428,
         "doordash_filas_limpias": 176097,
-        "kimbos_reales": 4,
+        "kimbos_reales": 6,
         "limpieza": "Sin nulos en tiempos/carga; conteos no negativos; al menos 1 repartidor en turno y 1 pedido pendiente; duracion real entre 10 y 180 min; ruta > 0; maximo 30 items.",
         "zona_horaria_doordash": "America/Los_Angeles",
         "preparacion_tipica_min": 29.93,
         "regla_retraso": "DoorDash: real > ruta + envio al restaurante + preparacion tipica (29.9 min) + 5 min. Kimbos: real > ruta + preparacion estimada + 5 min.",
         "repartidores_kimbos": 2
     },
-    "fecha_entrenamiento_utc": "2026-10-03T15:20:07.028406+00:00"
+    "fecha_entrenamiento_utc": "2026-10-03T16:55:11.831739+00:00"
 }
