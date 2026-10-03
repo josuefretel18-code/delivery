@@ -1,0 +1,37 @@
+# Despliegue en Render (Blueprint). En Render: New > Blueprint > este repositorio.
+#
+# El servidor solo PREDICE. El reentrenamiento se hace en el equipo de
+# desarrollo (necesita el CSV de DoorDash y mas memoria) y el modelo nuevo
+# se publica con git push: Render vuelve a desplegar automaticamente.
+
+services:
+  - type: web
+    name: kimbos-delivery
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    # 1 proceso (el plan free tiene 512 MB; Flask + modelo usa ~140 MB)
+    # y 4 hilos para atender peticiones en paralelo.
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health
+    envVars:
+      # Secretos: se ingresan en el panel de Render (no se suben a Git).
+      - key: DATABASE_URL
+        sync: false
+      - key: MAPS_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: REPARTIDORES_DISPONIBLES
+        value: "2"
+      # Sin dataset DoorDash ni disco persistente: no reentrenar aqui.
+      - key: REENTRENAMIENTO_AUTOMATICO
+        value: "false"
+
+      # Limita los hilos de las librerias numericas (menos memoria).
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"

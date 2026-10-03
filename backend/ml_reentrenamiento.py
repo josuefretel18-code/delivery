@@ -29,6 +29,12 @@ RUTA_BLOQUEO = CARPETA_METRICAS / ".reentrenando.lock"
 
 RUTA_ESTADO = CARPETA_METRICAS / "estado_reentrenamiento.json"
 
+# Sin este archivo (no se sube a Git) no se puede reentrenar:
+# es el caso del servidor de produccion, que solo predice.
+RUTA_DATASET_EXTERNO = (
+    RAIZ_PROYECTO / "ml" / "data" / "externo" / "historical_data.csv"
+)
+
 # Si un bloqueo tiene mas de 15 min, el proceso que lo creo
 # murio (p. ej. se reinicio Flask) y se descarta.
 BLOQUEO_VENCIDO_SEG = 15 * 60
@@ -57,9 +63,14 @@ RESULTADOS = {
 }
 
 
+def reentrenamiento_disponible():
+
+    return RUTA_DATASET_EXTERNO.exists()
+
+
 def reentrenamiento_automatico_activo():
 
-    return os.getenv(
+    return reentrenamiento_disponible() and os.getenv(
         "REENTRENAMIENTO_AUTOMATICO",
         "true"
     ).strip().lower() in ("1", "true", "si", "sí", "yes")
@@ -132,6 +143,7 @@ def leer_estado():
 
     estado["en_curso"] = en_curso()
     estado["automatico"] = reentrenamiento_automatico_activo()
+    estado["disponible"] = reentrenamiento_disponible()
 
     return estado
 
@@ -141,6 +153,7 @@ def _guardar_estado(**datos):
     estado = leer_estado()
     estado.pop("en_curso", None)
     estado.pop("automatico", None)
+    estado.pop("disponible", None)
     estado.update(datos)
 
     temporal = RUTA_ESTADO.with_suffix(".tmp")
@@ -286,6 +299,19 @@ def _ronda(origen):
 
 def reentrenar_manual():
     """Reentrena y espera el resultado. None si ya hay uno en curso."""
+
+    if not reentrenamiento_disponible():
+
+        return {
+            "codigo": None,
+            "resultado": "ERROR",
+            "mensaje": (
+                "Este servidor no reentrena: falta el dataset DoorDash. "
+                "El modelo se entrena en el equipo de desarrollo y se "
+                "publica con git push."
+            ),
+            "detalle": ""
+        }
 
     if not _adquirir_bloqueo():
         return None

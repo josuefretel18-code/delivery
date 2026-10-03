@@ -272,17 +272,24 @@ momento real; esos registros también entran al reentrenamiento.
 1. **Subir a GitHub**: `git push origin main` (hay commits locales sin subir).
 2. **Acumular pedidos reales** cambiando los estados en el momento real, para
    que la sección 2 del dashboard llegue a 30 evaluados y muestre la matriz.
-3. **Despliegue**:
-   - Gunicorn (ya está en `requirements.txt`), variables de entorno, PostgreSQL
-     en Aiven, Google Maps restringido al dominio de producción.
-   - El servidor solo necesita `modelo_final.joblib` para predecir. Para
-     reentrenar ahí hace falta subir `historical_data.csv` y **al menos 2 GB de
-     RAM**; en servidores pequeños usar `REENTRENAMIENTO_AUTOMATICO=false`.
-   - Disco persistente: en plataformas con disco efímero los modelos
-     reentrenados se pierden en cada despliegue.
-   - Con varios workers de Gunicorn el bloqueo por archivo funciona si
-     comparten disco.
-   - Probar `/`, `/admin`, la API y una predicción en producción.
+3. **Despliegue en Render** (preparado: `render.yaml` + `.python-version`):
+   - Plan free (512 MB). Flask + modelo usa ~140 MB. Gunicorn con 1 worker y
+     4 hilos. Python fijado en 3.10 (el predeterminado de Render, 3.14, no es
+     compatible con numpy/scipy fijados).
+   - **Render solo predice.** No tiene el CSV de DoorDash ni disco
+     persistente: el dashboard oculta el botón de reentrenar y
+     `REENTRENAMIENTO_AUTOMATICO=false`.
+   - **Flujo para actualizar el modelo:** reentrenar en el equipo de
+     desarrollo (usa los pedidos de producción, que están en la misma BD de
+     Aiven) → `git commit` del modelo y métricas → `git push` → Render
+     redespliega solo.
+   - Secretos en el panel de Render: `DATABASE_URL`, `MAPS_API_KEY`
+     (`JWT_SECRET_KEY` lo genera Render).
+   - Google Maps se usa solo en el navegador: añadir el dominio
+     `*.onrender.com` a las restricciones de la API Key.
+   - El plan free se duerme tras 15 min sin visitas (30–60 s en despertar):
+     abrir el sitio unos minutos antes de presentar.
+   - Probar `/`, `/admin`, `/api/health` y una predicción en producción.
 4. Opcional: pool de conexiones a PostgreSQL; rellenar nombre y teléfono del
    destinatario con los datos del cliente que inició sesión.
 

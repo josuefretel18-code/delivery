@@ -925,7 +925,12 @@ function renderizarDashboardML(datos) {
                 })
                 .join("");
 
+        // En producción no está el dataset DoorDash: no se reentrena.
+        const reentrenoDisponible =
+            datos.reentrenamiento?.disponible !== false;
+
         const puedeReentrenar =
+            reentrenoDisponible &&
             usuarioAdmin &&
             usuarioAdmin.rol === "ADMIN";
 
@@ -988,6 +993,19 @@ function renderizarDashboardML(datos) {
                     }
 
                 </div>
+
+                ${
+                    reentrenoDisponible
+                        ? ""
+                        : `
+                            <div class="alert alert-light border small">
+                                <strong>Servidor de producción:</strong> aquí el modelo solo predice.
+                                El reentrenamiento se ejecuta en el equipo de desarrollo (con los pedidos
+                                reales de esta misma base de datos) y la nueva versión se publica con
+                                <code>git push</code>.
+                            </div>
+                        `
+                }
 
                 <p class="small text-secondary">
                     ${
