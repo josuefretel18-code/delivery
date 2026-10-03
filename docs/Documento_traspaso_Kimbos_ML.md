@@ -1,7 +1,7 @@
 # Documento de Traspaso del Proyecto — Kimbos Delivery
 
-> Versión actualizada al **03/10/2026**. Reemplaza al documento anterior, que
-> describía un modelo entrenado con datos sintéticos (ya descartado).
+> Versión actualizada al **03/10/2026**. Reemplaza a los documentos
+> anteriores (el modelo con datos sintéticos fue descartado).
 
 ## 1. Objetivo del sistema
 
@@ -15,60 +15,75 @@ tiene riesgo de retrasarse.
 
 Flujo principal:
 
-Cliente → catálogo → carrito → ubicación → ruta → confirmación → pedido →
-**predicción ML** → preparación → en ruta → entrega → **resultado real** →
-comparación → **reentrenamiento automático**.
+Cliente → catálogo → carrito → ubicación → ruta → pedido → **predicción ML** →
+preparación → en ruta → entrega → **resultado real** → comparación →
+**reentrenamiento automático en Google Cloud**.
 
 ---
 
-## 2. Arquitectura y decisiones técnicas
+## 2. Arquitectura en producción
+
+```text
+        RENDER (sistema web)                        GOOGLE CLOUD (solo ML)
+┌──────────────────────────────┐         ┌──────────────────────────────────────┐
+│ kimbos-delivery              │  HTTPS  │ Cloud Run: kimbos-ml (API de ML)     │
+│ Flask + Gunicorn             │────────►│  POST /predecir   riesgo de retraso  │
+│ tienda, pedidos, panel admin,│ X-API-  │  GET  /metricas   métricas, matriz,  │
+│ dashboard ML                 │   Key   │                   historial, estado  │
+│                              │         │  POST /reentrenar lanza el job       │
+│ crear pedido  → /predecir    │         │  GET  /salud                         │
+│ entregar      → /reentrenar  │         └───────┬──────────────────────────────┘
+│ dashboard     → /metricas    │                 │ lanza
+└──────────────┬───────────────┘         ┌───────▼──────────────────────────────┐
+               │                         │ Cloud Run Job: kimbos-ml-entrenamiento│
+               │                         │ (2 vCPU, 4 GB) exportar + entrenar   │
+               │                         └───────┬──────────────────────────────┘
+               │                                 │ lee / guarda
+               │                         ┌───────▼──────────────────────────────┐
+               │                         │ Cloud Storage: dataset DoorDash,     │
+               │                         │ modelo activo, métricas, matriz de   │
+               │                         │ confusión, historial de versiones    │
+               │                         └──────────────────────────────────────┘
+               ▼
+     PostgreSQL en Aiven (pedidos y predicciones) ◄── el job lee los pedidos reales
+```
+
+| Componente | Dónde | Identificador |
+|---|---|---|
+| Sistema web | Render (plan free) | https://kimbos-delivery.onrender.com |
+| API de ML | Google Cloud Run | https://kimbos-ml-7qyvn27tpq-uc.a.run.app |
+| Entrenamiento | Cloud Run Job | `kimbos-ml-entrenamiento` |
+| Archivos del ML | Cloud Storage | `gs://gmp-demo-project-483664027-kimbos-ml` |
+| Secretos del ML | Secret Manager | `kimbos-database-url`, `kimbos-ml-api-key` |
+| Imagen del ML | Artifact Registry | `us-central1-docker.pkg.dev/gmp-demo-project-483664027/kimbos/kimbos-ml` |
+| Base de datos | Aiven PostgreSQL | `delivery_db` |
+
+Proyecto de Google Cloud: **Maps Platform Project**
+(`gmp-demo-project-483664027`), región `us-central1`. Es el mismo proyecto de
+la API Key de Google Maps.
 
 ### Tecnologías
 
-- Backend: Python 3.10 + Flask (REST), `.venv`.
-- Base de datos: PostgreSQL en Aiven (`delivery_db`).
-- Frontend: HTML, CSS, JavaScript y Bootstrap.
-- Mapas: Google Maps JavaScript API, Places API (New), Routes API.
+- Backend: Python + Flask (REST), Gunicorn. Render usa Python 3.10
+  (`.python-version`); el contenedor de ML usa Python 3.11 (`Dockerfile`).
+- Base de datos: PostgreSQL en Aiven.
+- Frontend: HTML, CSS, JavaScript, Bootstrap.
+- Mapas: Google Maps JavaScript API, Places API (New), Routes API (solo en el
+  navegador). La API Key "Delivery Maps Key" está restringida por URL de
+  referencia: incluye `localhost`, `127.0.0.1` y
+  `https://kimbos-delivery.onrender.com/*`.
 - Autenticación: JWT. Roles: CLIENTE, OPERADOR, ADMIN, REPARTIDOR.
-- ML: pandas, NumPy, scikit-learn, joblib, matplotlib.
-- Repositorio: GitHub (rama `main`).
+- ML: pandas, NumPy, scikit-learn 1.7.2, joblib, matplotlib.
+- Google Cloud: Cloud Run, Cloud Run Jobs, Cloud Storage, Secret Manager,
+  Artifact Registry, Cloud Build.
 
 ### Reglas de negocio
 
 - Estados: `REGISTRADO → PREPARANDO → EN_RUTA → ENTREGADO`.
 - Delivery: `S/ 3.00 + S/ 1.20 × distancia_km` (calculado en el backend).
-- Precios de productos: siempre desde PostgreSQL.
 - Al pasar a ENTREGADO se calculan `duracion_real_min` y
   `retraso = duración real > tiempo_estimado_total_min + 5 min`.
-
-### Tablas principales
-
-`usuarios`, `repartidores`, `estados_pedido`, `pedidos`, `historial_pedido`,
-`clima_pedido`, `predicciones_ml`, `auditoria`, `sedes`,
-`categorias_producto`, `productos`, `detalle_pedido`.
-
-`pedidos.fuente_datos` distingue `REAL` de `SINTETICO_ML`.
-
-### Arquitectura ML
-
-```text
-DoorDash (Kaggle, CSV local)  +  PostgreSQL (pedidos reales entregados)
-                 \                 /
-              ml/exportar_dataset.py   (limpieza + regla de retraso)
-                        ↓
-              ml/data/pedidos_ml.csv   (no se sube a Git)
-                        ↓
-              ml/entrenar_modelo.py    (3 modelos, CV, versión, promoción)
-                        ↓
-              ml/models/modelo_final.joblib  +  ml/metrics/*
-                        ↓
-              backend/ml_service.py    (predicción; recarga si cambia el archivo)
-                        ↓
-              pedido nuevo → predicción → tabla predicciones_ml
-```
-
-`ml/variables.py` define una sola vez las variables y reglas (hora pico, fin de
-semana, carga). Lo usan la exportación, el entrenamiento y Flask.
+- `pedidos.fuente_datos` distingue `REAL` de `SINTETICO_ML`.
 
 ---
 
@@ -76,226 +91,195 @@ semana, carga). Lo usan la exportación, el entrenamiento y Flask.
 
 - Responder en español; ser directa y práctica; una etapa a la vez.
 - Dar comandos exactos de PowerShell cuando corresponda.
-- **No inventar datos, métricas ni resultados**: leer `ml/metrics/metricas.json`.
+- **No inventar datos, métricas ni resultados.** Las métricas vigentes están en
+  Cloud Storage (`ml/metrics/metricas.json`); las copias del repositorio pueden
+  estar desactualizadas.
 - Revisar el resultado de cada paso antes de continuar.
 - Corregir al usuario cuando haya un error; no dar la razón automáticamente.
-- Explicar conceptos de forma sencilla para una exposición universitaria.
-
-### Código
-
-1. Identificar el archivo y revisar el código existente.
-2. Hacer el cambio mínimo necesario (no reemplazar archivos completos sin motivo).
-3. Ejecutar una comprobación y verificar el resultado.
+- Explicar de forma sencilla para una exposición universitaria.
+- Cambios de código: revisar el archivo, cambio mínimo, comprobar.
 
 ### Seguridad
 
-No pedir contraseñas, `DATABASE_URL`, `JWT_SECRET_KEY`, `MAPS_API_KEY` ni
-tokens. El `.env` está ignorado por Git y no debe subirse.
+No pedir contraseñas, `DATABASE_URL`, `JWT_SECRET_KEY`, `MAPS_API_KEY`,
+`ML_API_KEY` ni tokens. El `.env` está ignorado por Git.
 
-### Decisiones del docente (no revertir)
+### Decisiones del docente / ingeniero (no revertir)
 
-- **El docente no acepta datos sintéticos.** Los 1,000 registros
-  `SINTETICO_ML` siguen en la BD solo como respaldo: **no se muestran en el
-  panel ni se usan para entrenar**.
+- **No se aceptan datos sintéticos.** Los 1,000 registros `SINTETICO_ML`
+  siguen en la BD solo como respaldo: no se muestran ni se usan.
 - El modelo se entrena con **datos reales**: dataset público DoorDash +
   pedidos reales de Kimbos.
 - El modelo **se mejora con los registros nuevos**: reentrenamiento automático
-  al entregar cada pedido (ver §4).
+  al entregar cada pedido.
+- **El ML se despliega en Google Cloud, separado de Render.** Render solo
+  aloja el sistema web.
 
 ---
 
-## 4. Estado exacto de avance
-
-### Sistema base — completo
-
-Flask, frontend cliente, panel admin, registro/login, JWT, roles, catálogo,
-gestión de productos y categorías, pedidos, cálculo de delivery, Google Maps y
-rutas, estados, historial, auditoría, sede activa.
+## 4. Machine Learning
 
 ### Datos de entrenamiento
 
 | Fuente | Registros | Detalle |
 |---|---|---|
 | DoorDash ETA Prediction (Kaggle) | 197,428 → **176,097** tras limpieza | Entregas reales oct. 2014 – feb. 2015 (EE. UU.), con ruido añadido por DoorDash |
-| Pedidos reales de Kimbos entregados | **6** (al 03/10/2026) | Tabla `pedidos`, `fuente_datos = REAL` |
+| Pedidos reales de Kimbos entregados | **7** (al 03/10/2026) | Tabla `pedidos`, `fuente_datos = REAL` |
 
-- Archivo externo: `ml/data/externo/historical_data.csv` (**no está en Git**;
-  descargar de Kaggle buscando "DoorDash ETA Prediction").
+- El CSV externo (`historical_data.csv`) está en Cloud Storage
+  (`ml/data/externo/`) y en local en `ml/data/externo/` (no está en Git).
 - Limpieza: sin nulos en tiempos/carga; ≥ 1 repartidor en turno y ≥ 1 pedido
-  pendiente (las filas con 0 repartidores eran inconsistentes y distorsionaban
-  el modelo); duración real entre 10 y 180 min; ruta > 0; máximo 30 ítems.
+  pendiente; duración real entre 10 y 180 min; ruta > 0; máximo 30 ítems.
 - Zona horaria: DoorDash viene en UTC; se convierte a `America/Los_Angeles`
   (suposición: así los picos caen a las 12 h y 18 h).
 - **Regla de retraso**:
-  - DoorDash no trae hora prometida → estimado = ruta + envío al restaurante +
+  - DoorDash (no trae hora prometida): estimado = ruta + envío al restaurante +
     **29.9 min** de preparación típica (mediana del dataset). Retraso si
-    real > estimado + 5 min (**37.5 %** de retrasos).
+    real > estimado + 5 min (37.5 % de retrasos).
   - Kimbos: real > ruta + preparación estimada + 5 min.
-- Todo esto queda registrado en `ml/data/dataset_info.json`.
+- Detalle en `ml/data/dataset_info.json`.
 
-### Variables del modelo (7)
+### Variables del modelo (7) — definidas en `ml/variables.py`
 
 `duracion_estimada_min`, `cantidad_items`, `hora_pedido`, `dia_semana`,
 `hora_pico` (12–14 y 19–21), `fin_semana` (vie–dom), `carga_repartidor`.
 
-- `carga_repartidor = pedidos activos ÷ repartidores disponibles`. Se usa en
-  lugar de los pedidos activos sin dividir porque DoorDash tiene ~41 pedidos
-  activos y Kimbos 0–3; la carga sí es comparable y es la variable más
-  predictiva.
-- Kimbos no registra repartidores: se usa `REPARTIDORES_DISPONIBLES` del `.env`
-  (por defecto 2).
+- `carga_repartidor = pedidos activos ÷ repartidores disponibles`. Es
+  comparable entre DoorDash (~41 pedidos activos) y Kimbos (0–3), y es la
+  variable más predictiva. Kimbos usa `REPARTIDORES_DISPONIBLES` (2).
 - `distancia_km` y `tiempo_preparacion_estimado_min` se guardan en
-  `predicciones_ml` pero **no** son entradas (DoorDash no las tiene).
+  `predicciones_ml` pero no son entradas (DoorDash no las tiene).
 - Objetivo: `retraso` (0 = A tiempo, 1 = Retrasado).
 
-### Modelo activo: v4.0 (Gradient Boosting)
+### Modelo activo: v5.0 (Random Forest)
 
-Entrenado el 03/10/2026 con 176,103 registros (176,097 DoorDash + 6 Kimbos).
-División 80/20 estratificada; validación cruzada estratificada de 5 folds;
-selección por mayor F1 promedio de CV. Prueba con 35,221 registros:
+Entrenado en Google Cloud el 03/10/2026 (reentrenamiento automático) con
+176,104 registros (176,097 DoorDash + 7 Kimbos). División 80/20
+estratificada; validación cruzada estratificada de 5 folds; selección por
+mayor F1 promedio de CV. Prueba con 35,221 registros:
 
 | Modelo | F1 CV | Accuracy | Precision | Recall | F1 test | ROC-AUC |
 |---|---|---|---|---|---|---|
-| Regresión Logística | 0.6027 | 67.6 % | 55.7 % | 66.1 % | 0.6046 | 0.7307 |
-| Random Forest | 0.6059 | 70.0 % | 59.5 % | 62.7 % | 0.6105 | 0.7487 |
-| **Gradient Boosting** ✓ | **0.6067** | 69.9 % | 59.3 % | 62.8 % | 0.6097 | **0.7490** |
+| Regresión Logística | 0.6026 | 67.6 % | 55.7 % | 66.1 % | 0.6046 | 0.7306 |
+| **Random Forest** ✓ | **0.6068** | 70.0 % | 59.5 % | 62.4 % | 0.6092 | 0.7482 |
+| Gradient Boosting | 0.6052 | 69.9 % | 59.3 % | 62.7 % | 0.6091 | 0.7490 |
 
-Matriz de confusión (v4.0): `[[16314, 5701], [4915, 8291]]`
+Matriz de confusión (v5.0): `[[16412, 5603], [4968, 8238]]`
 (filas = real A tiempo / Retrasado; columnas = predicho).
 
 Notas para la exposición:
 
 - Random Forest y Gradient Boosting están prácticamente empatados.
-- La “mejora” de v2.0 (0.6063) a v4.0 (0.6067) es mínima. Con 6 pedidos de
-  Kimbos entre 176 mil, **no** se debe afirmar que los pedidos de Kimbos
-  mejoraron el modelo. Lo correcto es: *“el sistema reentrena con cada pedido
-  entregado y solo cambia de modelo si las métricas mejoran”*.
+- De v2.0 (0.6063) a v5.0 (0.6068) la mejora es mínima. Con 7 pedidos de
+  Kimbos entre 176 mil **no** se debe afirmar que esos pedidos mejoraron el
+  modelo. Lo correcto: *“el sistema reentrena con cada pedido entregado y
+  solo cambia de modelo si las métricas mejoran”*.
 
 ### Historial de versiones
 
-| Versión | Datos | Resultado |
-|---|---|---|
-| v1.0 | 1,000 sintéticos | **Descartado** (archivado en `archivo_sintetico/`) |
-| v2.0 | DoorDash + 4 Kimbos | Activo hasta v4.0 (Random Forest, F1 CV 0.6063) |
-| v3.0 | DoorDash + 5 Kimbos | No mejoró (0.6062), no se activó |
-| v4.0 | DoorDash + 6 Kimbos | **Activo** (Gradient Boosting, F1 CV 0.6067) |
+| Versión | Datos | Dónde se entrenó | Resultado |
+|---|---|---|---|
+| v1.0 | 1,000 sintéticos | Local | **Descartado** (`archivo_sintetico/`) |
+| v2.0 | DoorDash + 4 Kimbos | Local | Anterior (RF, F1 CV 0.6063) |
+| v3.0 | DoorDash + 5 Kimbos | Local | No mejoró (0.6062) |
+| v4.0 | DoorDash + 6 Kimbos | Local | Anterior (GB, 0.6067) |
+| v5.0 | DoorDash + 7 Kimbos | **Google Cloud** (automático) | **Activo** (RF, 0.6068) |
 
 ### Reentrenamiento
 
-- **Automático**: al marcar un pedido como ENTREGADO se reentrena en segundo
-  plano (`backend/ml_reentrenamiento.py`). Se controla con
-  `REENTRENAMIENTO_AUTOMATICO` en `.env` (activo por defecto).
-- **Manual**: botón en el dashboard (solo ADMIN) o por consola
-  `python ml/reentrenar.py`.
-- Solo se reentrena si hay pedidos reales nuevos desde el último entrenamiento.
-- La nueva versión **solo reemplaza a la activa si su F1 CV es igual o mayor**;
-  si no, queda en el historial como “No mejoró”.
-- Un único reentrenamiento a la vez (bloqueo por archivo,
-  `ml/metrics/.reentrenando.lock`). Si se entregan varios pedidos durante un
-  entrenamiento, al terminar se vuelve a entrenar una vez con todos.
-- El modelo se escribe de forma atómica y Flask lo recarga sin reiniciar.
-- La versión anterior se archiva como `ml/models/modelo_vN.joblib` (no se sube
-  a Git). Desde Flask se entrena con 1 proceso (`ML_N_JOBS=1`), ~50–60 s.
+- **Automático**: al marcar un pedido como ENTREGADO, Render llama a
+  `POST /reentrenar` de la API de ML, que lanza el Cloud Run Job (≈ 3 min).
+  Variable `REENTRENAMIENTO_AUTOMATICO=true` en Render.
+- El job descarga del bucket el dataset, el modelo y el historial; ejecuta
+  `ml/reentrenar.py`; repite mientras haya pedidos reales nuevos (máx. 3
+  vueltas) y sube los resultados.
+- Solo se entrena si hay pedidos reales nuevos desde el último entrenamiento.
+- La versión nueva **solo reemplaza a la activa si su F1 CV es igual o
+  mayor**; si no, queda como “No mejoró”.
+- Un solo entrenamiento a la vez (la API consulta las ejecuciones del job).
+- La API de ML revisa cada 30 s si cambió el modelo en el bucket y lo recarga
+  sin redesplegar.
+- **Botón manual** en el dashboard: solo aparece si hay pedidos entregados sin
+  procesar (el automático falló o está apagado), como “Reintentar
+  reentrenamiento”.
+- Si la API de ML no responde, **el pedido se registra igual sin predicción**.
 
-### Panel administrativo
+### Panel administrativo — Dashboard ML
 
-- Lista solo pedidos reales. Cada tarjeta muestra predicción (clase, % de
-  riesgo, versión) y, tras la entrega, el resultado real y si coincidió.
-- **Dashboard ML** (botón “🤖 Dashboard ML”):
-  1. *Evaluación del modelo*: métricas, matriz de confusión, comparación de
-     modelos, fuente del dataset y regla de retraso.
-  2. *Predicciones en pedidos reales*: tabla pedido por pedido (predicción vs.
-     resultado real, ✓ Acertó / ✕ Falló / Pendiente). La matriz y
-     Precision/Recall/F1 de pedidos reales aparecen desde 30 evaluados.
-     Excluye predicciones del modelo sintético v1.0.
-  3. *Evolución del modelo*: estado del reentrenamiento (en curso / último
-     resultado), botón de reentrenar y las 10 versiones más recientes.
+1. *Evaluación del modelo*: métricas, matriz de confusión, comparación de
+   modelos, fuente del dataset y regla de retraso.
+2. *Predicciones en pedidos reales*: tabla pedido por pedido (predicción vs.
+   resultado real). Matriz y Precision/Recall/F1 de reales desde 30 evaluados.
+   Excluye predicciones del modelo sintético v1.0.
+3. *Evolución del modelo*: dónde se entrena (Google Cloud), estado
+   (reentrenando / último resultado) y las 10 versiones más recientes.
 
-### Pedidos reales registrados (al 03/10/2026)
+---
 
-| Pedido | Modelo | Predicción | Resultado real | ¿Coincidió? |
-|---|---|---|---|---|
-| PED-2026-2257729A | — (antes de ML) | — | Retrasado (91 / 28 min) | — |
-| PED-2026-58BE97D3 | v1.0 (descartado) | A tiempo 34.0 % | Retrasado (38 / 21 min) | No |
-| PED-2026-77241475 | v1.0 (descartado) | A tiempo 45.7 % | A tiempo (8 / 31 min) | Sí |
-| PED-2026-80DB7A68 | v1.0 (descartado) | A tiempo 40.3 % | A tiempo (17 / 25 min) | Sí |
-| PED-2026-F38B42EC | v2.0 | A tiempo 23.3 % | A tiempo (17 / 20 min) | Sí |
-| PED-2026-A3571590 | v2.0 | A tiempo 23.6 % | A tiempo (6 / 18 min) | Sí |
+## 5. Código
 
-En el dashboard cuentan solo los 2 de v2.0 en adelante. Ojo: varios tiempos
-(8, 6, 91 min) vienen de pruebas en las que el estado no se cambió en el
-momento real; esos registros también entran al reentrenamiento.
+### Archivos principales
 
-### Base de datos — migraciones aplicadas
+```text
+app.py, db.py
+backend/
+├── ml_service.py          cliente de la API de ML (con ML_API_URL) o modelo local
+├── ml_reentrenamiento.py  dispara el reentrenamiento (remoto o local)
+└── routes/ pedidos.py (pedidos, predicción, dashboard ML), sedes.py, catalogo.py
+frontend/ templates/{index,admin}.html, static/{css,js}/{cliente,admin}.*
+ml/
+├── servicio.py            API de ML (Cloud Run)
+├── job_entrenamiento.py   entrenamiento (Cloud Run Job)
+├── almacen.py             Cloud Storage (ML_BUCKET) o carpetas locales
+├── prediccion.py          lógica de predicción
+├── variables.py           variables y reglas comunes
+├── exportar_dataset.py    DoorDash + Kimbos → pedidos_ml.csv
+├── entrenar_modelo.py     3 modelos, CV, versión, promoción
+├── reentrenar.py          exportar + entrenar (códigos 0/2/3)
+└── archivo_sintetico/     generadores sintéticos (no se usan)
+Dockerfile, requirements-ml.txt, .gcloudignore   imagen del ML
+render.yaml, .python-version, requirements.txt   sistema web (Render)
+scripts/desplegar_ml_gcp.ps1                     despliegue en Google Cloud
+docs/Documento_traspaso_Kimbos_ML.md
+```
 
-- `sql/adaptar_ml_pedidos.sql`, `sql/adaptar_predicciones_ml.sql`.
-- `sql/adaptar_predicciones_carga.sql`: añade `repartidores_disponibles` y
-  convierte `carga_repartidor` a `NUMERIC(8, 4)` en `predicciones_ml`
-  (ejecutado con `python -m scripts.ejecutar_adaptacion_carga`).
-
-### Endpoints
+### Endpoints del sistema web (Render)
 
 | Método | Ruta | Rol |
 |---|---|---|
 | POST | `/api/auth/registro`, `/api/auth/login` | público |
 | GET | `/api/auth/me` | autenticado |
-| GET | `/api/sedes/activa` | — |
-| GET / POST / PATCH | `/api/catalogo…` | lectura pública; escritura ADMIN (disponibilidad: ADMIN, OPERADOR) |
-| POST | `/api/pedidos` | CLIENTE, ADMIN, OPERADOR (incluye predicción ML) |
+| GET | `/api/sedes/activa`, `/api/catalogo` | público |
+| POST / PATCH | `/api/catalogo…` | ADMIN (disponibilidad: ADMIN, OPERADOR) |
+| POST | `/api/pedidos` | CLIENTE, ADMIN, OPERADOR (pide predicción) |
 | GET | `/api/pedidos/mis-pedidos` | autenticado |
 | GET | `/api/pedidos` | ADMIN, OPERADOR (solo reales) |
-| PATCH | `/api/pedidos/<id>/estado` | ADMIN, OPERADOR (ENTREGADO dispara reentrenamiento) |
+| PATCH | `/api/pedidos/<id>/estado` | ADMIN, OPERADOR (ENTREGADO → reentrenamiento) |
 | GET | `/api/pedidos/ml/resumen` | ADMIN, OPERADOR |
 | POST | `/api/pedidos/ml/reentrenar` | ADMIN |
+| GET | `/api/health`, `/api/database` | público |
+
+### Variables de entorno
+
+| Variable | Render | Cloud Run (API) | Cloud Run Job |
+|---|---|---|---|
+| `DATABASE_URL` | ✓ | — | ✓ (Secret Manager) |
+| `JWT_SECRET_KEY`, `MAPS_API_KEY` | ✓ | — | — |
+| `ML_API_URL`, `ML_API_KEY` | ✓ | `ML_API_KEY` (Secret Manager) | — |
+| `ML_BUCKET` | — | ✓ | ✓ |
+| `ML_JOB` | — | ✓ | — |
+| `REPARTIDORES_DISPONIBLES` | ✓ (2) | ✓ (2) | ✓ (2) |
+| `REENTRENAMIENTO_AUTOMATICO` | ✓ (true) | — | — |
+
+Sin `ML_API_URL` (desarrollo local) el sistema usa el modelo y archivos locales
+de `ml/`. El servicio de ML también puede correr en local:
+`python ml/servicio.py` (puerto 8000).
 
 ---
 
-## 5. Problemas conocidos
+## 6. Operación
 
-1. **Memoria del equipo de desarrollo.** El archivo de paginación está en 2 GB
-   (límite de memoria virtual 17.8 GB). Con Chrome, VS Code, SQL Server y MySQL
-   abiertos, el reentrenamiento falla con `MemoryError` o “El archivo de
-   paginación es demasiado pequeño”. Solución: archivo de paginación
-   personalizado en D: (8192 / 16384 MB) y reiniciar; o detener SQL Server y
-   MySQL (Kimbos no los usa).
-2. **Latencia:** cada petición tarda ~5 s porque abre dos conexiones nuevas a
-   Aiven (token + consulta). Mejora pendiente: pool de conexiones.
-3. **Git y el modelo:** cada reentrenamiento modifica `modelo_final.joblib`
-   (7.5 MB, comprimido), métricas e historial. Hacer commit del modelo solo en
-   momentos clave (antes de presentar o desplegar).
-4. Con `debug=True`, Flask carga la app dos veces (~580 MB cada proceso).
-
----
-
-## 6. Siguientes pasos pendientes
-
-1. **Subir a GitHub**: `git push origin main` (hay commits locales sin subir).
-2. **Acumular pedidos reales** cambiando los estados en el momento real, para
-   que la sección 2 del dashboard llegue a 30 evaluados y muestre la matriz.
-3. **Despliegue en Render** (preparado: `render.yaml` + `.python-version`):
-   - Plan free (512 MB). Flask + modelo usa ~140 MB. Gunicorn con 1 worker y
-     4 hilos. Python fijado en 3.10 (el predeterminado de Render, 3.14, no es
-     compatible con numpy/scipy fijados).
-   - **Render solo predice.** No tiene el CSV de DoorDash ni disco
-     persistente: el dashboard oculta el botón de reentrenar y
-     `REENTRENAMIENTO_AUTOMATICO=false`.
-   - **Flujo para actualizar el modelo:** reentrenar en el equipo de
-     desarrollo (usa los pedidos de producción, que están en la misma BD de
-     Aiven) → `git commit` del modelo y métricas → `git push` → Render
-     redespliega solo.
-   - Secretos en el panel de Render: `DATABASE_URL`, `MAPS_API_KEY`
-     (`JWT_SECRET_KEY` lo genera Render).
-   - Google Maps se usa solo en el navegador: añadir el dominio
-     `*.onrender.com` a las restricciones de la API Key.
-   - El plan free se duerme tras 15 min sin visitas (30–60 s en despertar):
-     abrir el sitio unos minutos antes de presentar.
-   - Probar `/`, `/admin`, `/api/health` y una predicción en producción.
-4. Opcional: pool de conexiones a PostgreSQL; rellenar nombre y teléfono del
-   destinatario con los datos del cliente que inició sesión.
-
----
-
-## 7. Cómo ejecutar
+### Ejecutar en local
 
 ```powershell
 cd C:\Proyectos\delivery
@@ -303,58 +287,78 @@ cd C:\Proyectos\delivery
 python app.py
 ```
 
-Variables del `.env` (ver `.env.example`): `DATABASE_URL`, `JWT_SECRET_KEY`,
-`MAPS_API_KEY`, `ML_API_URL`, `REPARTIDORES_DISPONIBLES`,
-`REENTRENAMIENTO_AUTOMATICO`.
+### Publicar cambios
 
-Comandos ML (desde la raíz, con el `.venv` activo):
+- **Sistema web**: `git push origin main` → Render redespliega solo.
+- **Código del ML** (`ml/`, `Dockerfile`): desde la raíz, con `gcloud`
+  configurado en el proyecto `gmp-demo-project-483664027`:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\desplegar_ml_gcp.ps1 -SoloCodigo
+  ```
+  (sin `-SoloCodigo` además revisa APIs, permisos y secretos, y sube al bucket
+  solo los archivos que falten: nunca reemplaza el modelo vigente).
+- Entrenar manualmente en la nube:
+  `gcloud run jobs execute kimbos-ml-entrenamiento --region=us-central1 --update-env-vars=ORIGEN=MANUAL --wait`
+- Traer el modelo vigente al equipo local:
+  `gcloud storage cp -r gs://gmp-demo-project-483664027-kimbos-ml/ml/models gs://gmp-demo-project-483664027-kimbos-ml/ml/metrics ml/`
 
-```powershell
-python ml/reentrenar.py      # exportar + entrenar (código 0 activado, 2 sin datos nuevos, 3 no mejoró)
-python ml/probar_modelo.py   # prueba rápida del modelo activo
-python -m scripts.verificar_ultima_prediccion
-```
+### Dónde ver todo en Google Cloud Console
+
+Cloud Run → `kimbos-ml` (métricas y registros de la API) · Cloud Run → Jobs →
+`kimbos-ml-entrenamiento` (ejecuciones y registros del entrenamiento) · Cloud
+Storage → bucket → `ml/metrics/matriz_confusion.png`, `metricas.json`,
+`historial_modelos.json`.
+
+### Base de datos — migraciones aplicadas
+
+`sql/adaptar_ml_pedidos.sql`, `sql/adaptar_predicciones_ml.sql`,
+`sql/adaptar_predicciones_carga.sql` (`repartidores_disponibles` y
+`carga_repartidor NUMERIC(8,4)` en `predicciones_ml`).
 
 ---
 
-## 8. Archivos importantes
+## 7. Problemas conocidos
 
-```text
-app.py, db.py
-backend/
-├── auth.py, decorators.py
-├── ml_service.py            predicción y recarga del modelo
-├── ml_reentrenamiento.py    reentrenamiento manual/automático, bloqueo, estado
-└── routes/ pedidos.py, sedes.py, catalogo.py
-frontend/
-├── templates/ index.html, admin.html
-└── static/ css/{cliente,admin}.css, js/{cliente,admin}.js
-ml/
-├── variables.py             variables y reglas comunes
-├── exportar_dataset.py      DoorDash + Kimbos → pedidos_ml.csv
-├── entrenar_modelo.py       entrenamiento, versión, promoción
-├── reentrenar.py            exportar + entrenar
-├── probar_modelo.py
-├── data/ dataset_info.json, externo/historical_data.csv (no en Git)
-├── models/ modelo_final.joblib, archivo_sintetico/
-├── metrics/ metricas.json, comparacion_modelos.csv, matriz_confusion.png,
-│            historial_modelos.json, archivo_sintetico/
-└── archivo_sintetico/       generadores de datos sintéticos (no se usan)
-scripts/                     verificaciones y migraciones (python -m scripts.<nombre>)
-sql/                         esquema y migraciones
-docs/Documento_traspaso_Kimbos_ML.md
-```
+1. **Arranque en frío**: Render (free) y Cloud Run (mín. 0 instancias) se
+   apagan sin uso. La primera visita tarda 30–60 s (Render) y la primera
+   predicción unos segundos más (Cloud Run). Abrir el sitio antes de presentar.
+2. **Latencia**: cada petición a Render abre dos conexiones a Aiven (~5 s en
+   local). Mejora pendiente: pool de conexiones.
+3. **El aviso “Reentrenando”** puede tardar ~1 min en apagarse después de que
+   termina el job (Google Cloud tarda en marcar la ejecución como terminada).
+4. **Equipo de desarrollo**: archivo de paginación de 2 GB; con muchos
+   programas abiertos el entrenamiento local falla por memoria (ya no afecta a
+   producción, que entrena en Google Cloud).
+5. **Python 3.10** (Render y `.venv`): Google deja de dar soporte en sus
+   librerías desde el 04/10/2026. El contenedor de ML ya usa 3.11; conviene
+   migrar Render y el `.venv` a 3.11.
+6. `/api/database` es público y muestra el nombre de la BD y el usuario
+   (no la contraseña). Conviene protegerlo o eliminarlo.
+
+---
+
+## 8. Siguientes pasos
+
+1. Acumular pedidos reales cambiando los estados en el momento real, para
+   que la sección 2 del dashboard llegue a 30 evaluados.
+2. Proteger o eliminar `/api/database`.
+3. Migrar Render y `.venv` a Python 3.11.
+4. Opcional: pool de conexiones a PostgreSQL; rellenar nombre y teléfono del
+   destinatario con los datos del cliente.
 
 ---
 
 ## Instrucción final para la IA que reciba este documento
 
-**No comenzar el proyecto desde cero ni volver a datos sintéticos.**
+**No comenzar desde cero, no volver a datos sintéticos y no mover el ML a
+Render.**
 
-El sistema ya tiene Flask, PostgreSQL, frontend, panel, Google Maps, modelo
-v4.0 entrenado con datos reales (DoorDash + Kimbos), predicción en cada pedido,
-comparación con el resultado real, dashboard ML y reentrenamiento automático.
+El sistema está desplegado: web en Render y Machine Learning en Google Cloud
+(API en Cloud Run, entrenamiento en Cloud Run Job, archivos en Cloud Storage),
+con modelo v5.0 entrenado con datos reales, predicción en cada pedido,
+dashboard con métricas y matriz de confusión, y reentrenamiento automático en
+la nube al entregar cada pedido.
 
-Continuar con: subir a GitHub, acumular pedidos reales y preparar el despliegue.
-Antes de citar cualquier métrica, leer `ml/metrics/metricas.json` e
-`ml/metrics/historial_modelos.json`, porque cambian con cada reentrenamiento.
+Antes de citar métricas, leer `ml/metrics/metricas.json` e
+`historial_modelos.json` **desde Cloud Storage**, porque cambian con cada
+reentrenamiento.

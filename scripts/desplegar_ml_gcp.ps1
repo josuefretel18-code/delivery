@@ -118,8 +118,11 @@ if (-not $SoloCodigo) {
     }
 
     # -----------------------------------------------------------------
-    Paso "Subiendo dataset, modelo y metricas al bucket"
+    Paso "Subiendo dataset, modelo y metricas al bucket (solo los que faltan)"
     # -----------------------------------------------------------------
+    # --no-clobber: no reemplaza lo que ya esta en el bucket. Despues del
+    # primer despliegue el modelo vigente lo escribe el job de
+    # entrenamiento y no debe pisarse con la copia local.
 
     $Archivos = @(
         "ml/data/externo/historical_data.csv",
@@ -133,7 +136,7 @@ if (-not $SoloCodigo) {
 
     foreach ($archivo in $Archivos) {
         if (Test-Path $archivo) {
-            gcloud storage cp $archivo "gs://$Bucket/$archivo"
+            gcloud storage cp --no-clobber $archivo "gs://$Bucket/$archivo"
             Verificar "subir $archivo"
         } else {
             Write-Host "  (no existe, se omite) $archivo" -ForegroundColor Yellow
