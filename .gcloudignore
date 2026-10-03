@@ -1,0 +1,27 @@
+# Archivos que NO se suben a Google Cloud al construir la imagen de ML.
+# (Sin este archivo gcloud usaria .gitignore.)
+
+.git
+.gitignore
+.gcloudignore
+.venv/
+.vscode/
+.env
+__pycache__/
+*.pyc
+
+# El sistema web no va en la imagen de ML
+frontend/
+backend/
+scripts/
+sql/
+docs/
+app.py
+render.yaml
+requirements.txt
+
+# Datos y artefactos: se leen de Cloud Storage
+ml/data/
+ml/models/
+ml/metrics/
+ml/archivo_sintetico/

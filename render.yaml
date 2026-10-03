@@ -24,11 +24,20 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
 
+      # API de ML en Google Cloud Run (ml/servicio.py). Con ML_API_URL
+      # este servidor no carga el modelo: predicciones, metricas y
+      # entrenamiento se piden a Google Cloud.
+      - key: ML_API_URL
+        sync: false
+      - key: ML_API_KEY
+        sync: false
+
       - key: REPARTIDORES_DISPONIBLES
         value: "2"
-      # Sin dataset DoorDash ni disco persistente: no reentrenar aqui.
+      # Al entregar un pedido se pide el reentrenamiento a Google Cloud
+      # (sin ML_API_URL no tiene efecto: aqui no hay dataset).
       - key: REENTRENAMIENTO_AUTOMATICO
-        value: "false"
+        value: "true"
 
       # Limita los hilos de las librerias numericas (menos memoria).
       - key: OMP_NUM_THREADS

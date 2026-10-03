@@ -63,9 +63,16 @@ RESULTADOS = {
 }
 
 
+def _ml_remoto():
+
+    # Con ML_API_URL el entrenamiento corre en la API de ML (Google
+    # Cloud); este servidor solo lo solicita.
+    return bool(os.getenv("ML_API_URL", "").strip())
+
+
 def reentrenamiento_disponible():
 
-    return RUTA_DATASET_EXTERNO.exists()
+    return _ml_remoto() or RUTA_DATASET_EXTERNO.exists()
 
 
 def reentrenamiento_automatico_activo():
@@ -297,8 +304,47 @@ def _ronda(origen):
     return ultimo
 
 
+def _solicitar_remoto(origen):
+    """Pide el entrenamiento a la API de ML. None si ya hay uno en curso."""
+
+    from backend.ml_service import solicitar_reentrenamiento
+
+    try:
+        codigo, datos = solicitar_reentrenamiento(origen)
+    except Exception as error:
+        print(f"[REENTRENAMIENTO] API de ML no disponible: {error}", flush=True)
+        return {
+            "codigo": None,
+            "resultado": "ERROR",
+            "mensaje": f"No se pudo contactar a la API de ML: {error}",
+            "detalle": ""
+        }
+
+    if codigo == 409:
+        return None
+
+    if codigo >= 400:
+        return {
+            "codigo": codigo,
+            "resultado": "ERROR",
+            "mensaje": datos.get("mensaje", f"Error {codigo} en la API de ML"),
+            "detalle": ""
+        }
+
+    return {
+        "codigo": codigo,
+        "resultado": datos.get("resultado", "INICIADO"),
+        "mensaje": datos.get("mensaje", "Entrenamiento iniciado."),
+        "detalle": ""
+    }
+
+
 def reentrenar_manual():
-    """Reentrena y espera el resultado. None si ya hay uno en curso."""
+    """Reentrena y espera el resultado. None si ya hay uno en curso.
+    En modo remoto solo lo inicia (resultado INICIADO)."""
+
+    if _ml_remoto():
+        return _solicitar_remoto("MANUAL")
 
     if not reentrenamiento_disponible():
 
@@ -321,6 +367,17 @@ def reentrenar_manual():
 
 def iniciar_reentrenamiento_automatico():
     """Lanza el reentrenamiento en segundo plano y vuelve enseguida."""
+
+    if _ml_remoto():
+
+        threading.Thread(
+            target=_solicitar_remoto,
+            args=("AUTOMATICO",),
+            name="reentrenamiento-ml",
+            daemon=True
+        ).start()
+
+        return
 
     def tarea():
 

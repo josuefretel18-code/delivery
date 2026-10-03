@@ -942,8 +942,9 @@ function renderizarDashboardML(datos) {
                 ? `
                     <div class="alert alert-info small d-flex align-items-center gap-2">
                         <span class="spinner-border spinner-border-sm"></span>
-                        Reentrenando el modelo con el último pedido entregado...
-                        (alrededor de 1 minuto; esta sección se actualiza sola)
+                        Reentrenando el modelo con los pedidos entregados
+                        ${estadoReentreno.donde ? `en ${escaparHtmlAdmin(estadoReentreno.donde)}` : ""}...
+                        (tarda unos minutos; esta sección se actualiza sola)
                     </div>
                 `
                 : estadoReentreno.fin
@@ -1016,6 +1017,11 @@ function renderizarDashboardML(datos) {
                     se une el dataset DoorDash con los pedidos reales de Kimbos entregados
                     y se entrena una nueva versión. Solo reemplaza al modelo activo
                     si su F1 en validación cruzada es igual o mejor.
+                    ${
+                        estadoReentreno.donde
+                            ? `<br><strong>Entrenamiento en:</strong> ${escaparHtmlAdmin(estadoReentreno.donde)}`
+                            : ""
+                    }
                 </p>
 
                 ${avisoReentreno}

@@ -1,18 +1,14 @@
-import json
-import os
 import secrets
 from datetime import datetime, timezone
-from pathlib import Path
 
 from flask import Blueprint, jsonify, request, g
 
 from db import get_connection
 from backend.decorators import token_required, roles_required
 from decimal import Decimal, ROUND_HALF_UP
-from backend.ml_service import predecir_retraso
+from backend.ml_service import obtener_datos_ml, predecir_retraso
 from backend.ml_reentrenamiento import (
     iniciar_reentrenamiento_automatico,
-    leer_estado as leer_estado_reentrenamiento,
     reentrenamiento_automatico_activo,
     reentrenar_manual
 )
@@ -617,148 +613,163 @@ def crear_pedido():
                 )
 
 
-                # Ejecutar modelo ML.
+                # Ejecutar modelo ML (API de ML en Google Cloud o modelo
+                # local). Si falla, el pedido se registra igual sin
+                # prediccion: la tienda no depende del servicio de ML.
 
-                prediccion_ml = predecir_retraso(
+                try:
 
-                    distancia_km=
-                        distancia_km,
+                    prediccion_ml = predecir_retraso(
 
-                    duracion_estimada_min=
-                        duracion_estimada_min,
+                        distancia_km=
+                            distancia_km,
 
-                    tiempo_preparacion_estimado_min=
-                        tiempo_preparacion,
+                        duracion_estimada_min=
+                            duracion_estimada_min,
 
-                    cantidad_items=
-                        cantidad_items,
+                        tiempo_preparacion_estimado_min=
+                            tiempo_preparacion,
 
-                    pedidos_activos=
-                        pedidos_activos,
+                        cantidad_items=
+                            cantidad_items,
 
-                    fecha_pedido=
-                        fecha_pedido_ml
-                )
+                        pedidos_activos=
+                            pedidos_activos,
+
+                        fecha_pedido=
+                            fecha_pedido_ml
+                    )
+
+                except Exception as error:
+
+                    print(
+                        f"[ML] Pedido {pedido_id} sin prediccion: {error}",
+                        flush=True
+                    )
+
+                    prediccion_ml = None
 
 
-                variables_ml = (
-                    prediccion_ml[
-                        "variables"
-                    ]
-                )
+                if prediccion_ml is not None:
+
+                    variables_ml = (
+                        prediccion_ml[
+                            "variables"
+                        ]
+                    )
 
 
-                # Guardar la predicción y las variables
-                # utilizadas por el modelo.
+                    # Guardar la predicción y las variables
+                    # utilizadas por el modelo.
 
-                cur.execute("""
-                    INSERT INTO predicciones_ml (
+                    cur.execute("""
+                        INSERT INTO predicciones_ml (
+
+                            pedido_id,
+
+                            modelo_version,
+                            clase_predicha,
+                            probabilidad_retraso,
+
+                            distancia_km,
+                            duracion_estimada_min,
+                            tiempo_preparacion_estimado_min,
+                            cantidad_items,
+
+                            hora_pedido,
+                            dia_semana,
+                            hora_pico,
+                            fin_semana,
+
+                            pedidos_activos,
+                            repartidores_disponibles,
+                            carga_repartidor,
+
+                            zona_origen,
+                            zona_destino
+
+                        )
+                        VALUES (
+
+                            %s,
+
+                            %s,
+                            %s,
+                            %s,
+
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+
+                            %s,
+                            %s,
+                            %s,
+
+                            %s,
+                            %s
+                        );
+                    """, (
 
                         pedido_id,
 
-                        modelo_version,
-                        clase_predicha,
-                        probabilidad_retraso,
+                        prediccion_ml[
+                            "modelo_version"
+                        ],
+
+                        prediccion_ml[
+                            "clase_predicha"
+                        ],
+
+                        prediccion_ml[
+                            "probabilidad_retraso"
+                        ],
 
                         distancia_km,
+
                         duracion_estimada_min,
-                        tiempo_preparacion_estimado_min,
+
+                        tiempo_preparacion,
+
                         cantidad_items,
 
-                        hora_pedido,
-                        dia_semana,
-                        hora_pico,
-                        fin_semana,
+                        variables_ml[
+                            "hora_pedido"
+                        ],
+
+                        variables_ml[
+                            "dia_semana"
+                        ],
+
+                        variables_ml[
+                            "hora_pico"
+                        ],
+
+                        variables_ml[
+                            "fin_semana"
+                        ],
 
                         pedidos_activos,
-                        repartidores_disponibles,
-                        carga_repartidor,
 
-                        zona_origen,
-                        zona_destino
+                        variables_ml[
+                            "repartidores"
+                        ],
 
-                    )
-                    VALUES (
+                        variables_ml[
+                            "carga_repartidor"
+                        ],
 
-                        %s,
+                        sede["nombre"],
 
-                        %s,
-                        %s,
-                        %s,
-
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-
-                        %s,
-                        %s,
-                        %s,
-
-                        %s,
-                        %s
-                    );
-                """, (
-
-                    pedido_id,
-
-                    prediccion_ml[
-                        "modelo_version"
-                    ],
-
-                    prediccion_ml[
-                        "clase_predicha"
-                    ],
-
-                    prediccion_ml[
-                        "probabilidad_retraso"
-                    ],
-
-                    distancia_km,
-
-                    duracion_estimada_min,
-
-                    tiempo_preparacion,
-
-                    cantidad_items,
-
-                    variables_ml[
-                        "hora_pedido"
-                    ],
-
-                    variables_ml[
-                        "dia_semana"
-                    ],
-
-                    variables_ml[
-                        "hora_pico"
-                    ],
-
-                    variables_ml[
-                        "fin_semana"
-                    ],
-
-                    pedidos_activos,
-
-                    variables_ml[
-                        "repartidores"
-                    ],
-
-                    variables_ml[
-                        "carga_repartidor"
-                    ],
-
-                    sede["nombre"],
-
-                    datos.get(
-                        "zona_destino"
-                    )
-                ))
+                        datos.get(
+                            "zona_destino"
+                        )
+                    ))
 
 
                 # =========================================
@@ -886,33 +897,39 @@ def crear_pedido():
                 "tiempo_estimado_total_min":
                     tiempo_estimado_total,
 
-                "prediccion_ml": {
+                "prediccion_ml": (
+                    {
 
-                    "clase":
-                        prediccion_ml[
-                            "clase_predicha"
-                        ],
+                        "clase":
+                            prediccion_ml[
+                                "clase_predicha"
+                            ],
 
-                    "probabilidad_retraso":
-                        prediccion_ml[
-                            "probabilidad_retraso"
-                        ],
+                        "probabilidad_retraso":
+                            prediccion_ml[
+                                "probabilidad_retraso"
+                            ],
 
-                    "probabilidad_porcentaje":
-                        prediccion_ml[
-                            "probabilidad_porcentaje"
-                        ],
+                        "probabilidad_porcentaje":
+                            prediccion_ml[
+                                "probabilidad_porcentaje"
+                            ],
 
-                    "modelo":
-                        prediccion_ml[
-                            "modelo_nombre"
-                        ],
+                        "modelo":
+                            prediccion_ml[
+                                "modelo_nombre"
+                            ],
 
-                    "version":
-                        prediccion_ml[
-                            "modelo_version"
-                        ]
-                }
+                        "version":
+                            prediccion_ml[
+                                "modelo_version"
+                            ]
+                    }
+
+                    if prediccion_ml is not None
+
+                    else None
+                )
             }
 
         }), 201
@@ -1636,22 +1653,6 @@ def actualizar_estado_pedido(pedido_id):
 # ADMIN / OPERADOR
 # =========================================================
 
-RAIZ_PROYECTO = Path(__file__).resolve().parents[2]
-
-RUTA_METRICAS_ML = (
-    RAIZ_PROYECTO
-    / "ml"
-    / "metrics"
-    / "metricas.json"
-)
-
-RUTA_HISTORIAL_ML = (
-    RAIZ_PROYECTO
-    / "ml"
-    / "metrics"
-    / "historial_modelos.json"
-)
-
 # v1.0 se entreno con datos sinteticos (descartado): sus
 # predicciones no cuentan en el rendimiento con pedidos reales.
 VERSIONES_DESCARTADAS = ("v1.0",)
@@ -1671,18 +1672,31 @@ def _dividir(numerador, denominador):
 def resumen_ml():
 
     # -----------------------------------------
-    # Evaluación del modelo (metricas.json)
+    # Evaluación del modelo: API de ML (Google
+    # Cloud) o archivos locales en desarrollo
     # -----------------------------------------
+
+    try:
+
+        datos_ml = obtener_datos_ml()
+
+    except Exception as error:
+
+        datos_ml = {
+            "metricas": None,
+            "historial": [],
+            "estado": {
+                "resultado": "ERROR",
+                "mensaje": f"API de ML no disponible: {error}",
+                "fin": None
+            }
+        }
 
     modelo = None
 
-    if RUTA_METRICAS_ML.exists():
+    metricas = datos_ml.get("metricas")
 
-        metricas = json.loads(
-            RUTA_METRICAS_ML.read_text(
-                encoding="utf-8"
-            )
-        )
+    if metricas:
 
         seleccionado = metricas[
             "modelo_seleccionado"
@@ -1884,16 +1898,8 @@ def resumen_ml():
         "ok": True,
         "modelo": modelo,
         "reales": reales,
-        "reentrenamiento": leer_estado_reentrenamiento(),
-        "historial": (
-            json.loads(
-                RUTA_HISTORIAL_ML.read_text(
-                    encoding="utf-8"
-                )
-            )
-            if RUTA_HISTORIAL_ML.exists()
-            else []
-        )
+        "reentrenamiento": datos_ml.get("estado", {}),
+        "historial": datos_ml.get("historial", [])
     })
 
 

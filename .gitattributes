@@ -1,0 +1,3 @@
+# Archivos que se ejecutan en Linux (Google Cloud): siempre LF
+Dockerfile text eol=lf
+*.sh text eol=lf
