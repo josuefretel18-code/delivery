@@ -1,0 +1,17 @@
+[
+    {
+        "version": "v2.0",
+        "fecha_entrenamiento_utc": "2026-10-03T15:20:07.028406+00:00",
+        "modelo": "Random Forest",
+        "registros_totales": 176101,
+        "registros_externos": 176097,
+        "registros_reales": 4,
+        "f1_cv": 0.6062591774893302,
+        "accuracy": 0.6995826353595866,
+        "precision": 0.5941467613514095,
+        "recall": 0.6272149023171286,
+        "f1": 0.610233174936457,
+        "roc_auc": 0.7483436922542143,
+        "promovido": true
+    }
+]

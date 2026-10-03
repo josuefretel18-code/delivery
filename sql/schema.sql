@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS predicciones_ml (
 
     pedidos_activos INTEGER,
 
-    carga_repartidor INTEGER,
+    carga_repartidor NUMERIC(8, 4),
 
     temperatura DECIMAL(5,2),
 

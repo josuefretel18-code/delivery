@@ -1,4 +1,6 @@
 import json
+import shutil
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -8,7 +10,7 @@ import pandas as pd
 
 from sklearn.ensemble import (
     RandomForestClassifier,
-    GradientBoostingClassifier
+    HistGradientBoostingClassifier
 )
 
 from sklearn.linear_model import LogisticRegression
@@ -38,6 +40,18 @@ from sklearn.preprocessing import StandardScaler
 # =========================================================
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from ml.variables import COLUMNAS_MODELO, TARGET
+
+ARCHIVO_INFO_DATASET = (
+    RAIZ
+    / "ml"
+    / "data"
+    / "dataset_info.json"
+)
 
 ARCHIVO_DATASET = (
     RAIZ
@@ -75,19 +89,76 @@ CARPETA_METRICAS.mkdir(
 
 RANDOM_STATE = 42
 
-COLUMNAS_MODELO = [
-    "distancia_km",
-    "duracion_estimada_min",
-    "tiempo_preparacion_estimado_min",
-    "cantidad_items",
-    "hora_pedido",
-    "dia_semana",
-    "hora_pico",
-    "fin_semana",
-    "pedidos_activos"
-]
+# Procesos en paralelo. Con -1 se usa un proceso por nucleo y,
+# con ~180 mil registros, puede agotar la memoria del equipo.
+N_JOBS = 2
 
-TARGET = "retraso"
+# Columnas de entrada y objetivo: ver ml/variables.py
+
+
+# =========================================================
+# MODELO ACTUAL E HISTORIAL DE VERSIONES
+# =========================================================
+
+ARCHIVO_MODELO = CARPETA_MODELOS / "modelo_final.joblib"
+ARCHIVO_METRICAS = CARPETA_METRICAS / "metricas.json"
+ARCHIVO_HISTORIAL = CARPETA_METRICAS / "historial_modelos.json"
+
+
+def leer_json(ruta, defecto):
+
+    if not ruta.exists():
+        return defecto
+
+    return json.loads(
+        ruta.read_text(encoding="utf-8")
+    )
+
+
+def resumen_version(metricas, promovido):
+
+    dataset = metricas["dataset"]
+    elegido = metricas["resultados"][
+        metricas["modelo_seleccionado"]
+    ]
+
+    return {
+        "version": metricas["version_modelo"],
+        "fecha_entrenamiento_utc": metricas["fecha_entrenamiento_utc"],
+        "modelo": metricas["modelo_seleccionado"],
+        "registros_totales": dataset["registros_totales"],
+        "registros_externos": dataset.get("registros_externos", 0),
+        "registros_reales": dataset.get("registros_reales", 0),
+        "f1_cv": elegido["f1_cv_promedio"],
+        "accuracy": elegido["accuracy_test"],
+        "precision": elegido["precision_test"],
+        "recall": elegido["recall_test"],
+        "f1": elegido["f1_test"],
+        "roc_auc": elegido["roc_auc_test"],
+        "promovido": promovido
+    }
+
+
+metricas_actuales = leer_json(ARCHIVO_METRICAS, None)
+historial = leer_json(ARCHIVO_HISTORIAL, [])
+
+# La primera vez, el historial arranca con el modelo vigente.
+if not historial and metricas_actuales:
+    historial.append(
+        resumen_version(metricas_actuales, True)
+    )
+
+# v1.0 fue el modelo entrenado con datos sinteticos
+# (descartado). Los modelos con datos reales empiezan en v2.0.
+numero_version = max(
+    [
+        int(float(v["version"].lstrip("v")))
+        for v in historial
+    ],
+    default=1
+) + 1
+
+version_modelo = f"v{numero_version}.0"
 
 
 # =========================================================
@@ -111,6 +182,42 @@ print(
     "Variables de entrada:",
     len(COLUMNAS_MODELO)
 )
+
+registros_reales = int(
+    (df["fuente_datos"] == "REAL").sum()
+)
+
+# Externos = dataset publico DoorDash.
+registros_externos = int(
+    len(df) - registros_reales
+)
+
+print(
+    "DoorDash:",
+    registros_externos,
+    "| Reales Kimbos:",
+    registros_reales
+)
+
+
+# Sin pedidos reales nuevos desde el ultimo entrenamiento
+# (promovido o no) el dataset seria el mismo: no se reentrena.
+if historial:
+
+    reales_ultimo = max(
+        v["registros_reales"]
+        for v in historial
+    )
+
+    if registros_reales <= reales_ultimo:
+
+        print(
+            "\nNo hay pedidos reales nuevos desde "
+            f"el ultimo entrenamiento ({reales_ultimo} reales). "
+            "No se reentrena."
+        )
+
+        sys.exit(2)
 
 
 # =========================================================
@@ -215,18 +322,20 @@ modelos = {
     ]),
 
     "Random Forest": RandomForestClassifier(
-        n_estimators=350,
-        max_depth=8,
-        min_samples_leaf=3,
+        n_estimators=150,
+        max_depth=10,
+        min_samples_leaf=20,
         class_weight="balanced",
         random_state=RANDOM_STATE,
-        n_jobs=-1
+        n_jobs=N_JOBS
     ),
 
-    "Gradient Boosting": GradientBoostingClassifier(
-        n_estimators=150,
-        learning_rate=0.05,
-        max_depth=3,
+    # Version de Gradient Boosting optimizada para
+    # datasets grandes (~180 mil registros).
+    "Gradient Boosting": HistGradientBoostingClassifier(
+        max_iter=200,
+        learning_rate=0.1,
+        class_weight="balanced",
         random_state=RANDOM_STATE
     )
 }
@@ -272,7 +381,7 @@ for nombre, modelo in modelos.items():
         y_train,
         cv=cv,
         scoring="f1",
-        n_jobs=-1
+        n_jobs=N_JOBS
     )
 
     f1_cv_promedio = (
@@ -453,10 +562,27 @@ matriz_final = confusion_matrix(
 
 
 # =========================================================
-# GUARDAR MODELO
+# ¿EL NUEVO MODELO MEJORA AL VIGENTE?
+# Mismo criterio de seleccion: F1 promedio de CV.
 # =========================================================
 
-version_modelo = "v1.0"
+f1_cv_vigente = (
+    metricas_actuales["resultados"][
+        metricas_actuales["modelo_seleccionado"]
+    ]["f1_cv_promedio"]
+    if metricas_actuales
+    else None
+)
+
+promovido = bool(
+    f1_cv_vigente is None
+    or mejor_f1_cv >= f1_cv_vigente
+)
+
+
+# =========================================================
+# GUARDAR MODELO
+# =========================================================
 
 fecha_entrenamiento = (
     datetime.now(
@@ -487,15 +613,77 @@ paquete_modelo = {
 }
 
 
-ruta_modelo = (
-    CARPETA_MODELOS
-    / "modelo_final.joblib"
-)
+def guardar_historial():
+
+    elegido = resultados[mejor_nombre]
+
+    historial.append({
+        "version": version_modelo,
+        "fecha_entrenamiento_utc": fecha_entrenamiento,
+        "modelo": mejor_nombre,
+        "registros_totales": int(len(df)),
+        "registros_externos": registros_externos,
+        "registros_reales": registros_reales,
+        "f1_cv": elegido["f1_cv_promedio"],
+        "accuracy": elegido["accuracy_test"],
+        "precision": elegido["precision_test"],
+        "recall": elegido["recall_test"],
+        "f1": elegido["f1_test"],
+        "roc_auc": elegido["roc_auc_test"],
+        "promovido": promovido
+    })
+
+    ARCHIVO_HISTORIAL.write_text(
+        json.dumps(
+            historial,
+            indent=4,
+            ensure_ascii=False
+        ),
+        encoding="utf-8"
+    )
+
+
+if not promovido:
+
+    guardar_historial()
+
+    print("\n========================================")
+    print("MODELO NO PROMOVIDO")
+    print("========================================")
+    print(
+        f"{version_modelo} ({mejor_nombre}) F1 CV "
+        f"{mejor_f1_cv:.4f} < vigente "
+        f"{metricas_actuales['version_modelo']} "
+        f"{f1_cv_vigente:.4f}"
+    )
+    print("Se mantiene el modelo vigente.")
+
+    sys.exit(3)
+
+
+# Archivar el modelo vigente antes de reemplazarlo.
+if ARCHIVO_MODELO.exists() and metricas_actuales:
+
+    shutil.copy2(
+        ARCHIVO_MODELO,
+        CARPETA_MODELOS
+        / f"modelo_{metricas_actuales['version_modelo']}.joblib"
+    )
+
+
+ruta_modelo = ARCHIVO_MODELO
+
+# Escribir en temporal y reemplazar de una vez, para que
+# Flask nunca lea un archivo a medio escribir.
+ruta_temporal = ruta_modelo.with_suffix(".tmp")
 
 joblib.dump(
     paquete_modelo,
-    ruta_modelo
+    ruta_temporal,
+    compress=3
 )
+
+ruta_temporal.replace(ruta_modelo)
 
 
 # =========================================================
@@ -553,6 +741,8 @@ salida_metricas = {
         "registros_prueba": int(
             len(X_test)
         ),
+        "registros_externos": registros_externos,
+        "registros_reales": registros_reales,
 
         "a_tiempo": int(
             (y == 0).sum()
@@ -579,6 +769,7 @@ salida_metricas = {
     ),
 
     "resultados": resultados,
+    "fuente_dataset": leer_json(ARCHIVO_INFO_DATASET, None),
 
     "fecha_entrenamiento_utc": (
         fecha_entrenamiento
@@ -708,6 +899,9 @@ print(
 print(
     ruta_metricas
 )
+
+guardar_historial()
+
 
 print("\n========================================")
 print("ENTRENAMIENTO COMPLETADO")

@@ -1,140 +1,66 @@
+"""
+Prueba rapida del modelo activo con dos pedidos de ejemplo.
+
+Usa la misma funcion de prediccion que Flask, asi que las
+variables se calculan igual que en un pedido real.
+
+Uso (desde la raiz del proyecto):
+    python ml/probar_modelo.py
+"""
+
+import sys
+from datetime import datetime
 from pathlib import Path
-
-import joblib
-import pandas as pd
-
+from zoneinfo import ZoneInfo
 
 RAIZ = Path(__file__).resolve().parent.parent
 
-RUTA_MODELO = (
-    RAIZ
-    / "ml"
-    / "models"
-    / "modelo_final.joblib"
-)
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
+from backend.ml_service import obtener_modelo, predecir_retraso
 
 
-# =========================================================
-# CARGAR MODELO
-# =========================================================
+TZ_PERU = ZoneInfo("America/Lima")
 
-paquete = joblib.load(
-    RUTA_MODELO
-)
-
-modelo = paquete["modelo"]
-columnas = paquete["columnas"]
-
+paquete = obtener_modelo()
 
 print("\n========================================")
 print("PRUEBA DEL MODELO ML - KIMBOS")
 print("========================================")
-
-print(
-    "Modelo:",
-    paquete["nombre_modelo"]
-)
-
-print(
-    "Version:",
-    paquete["version"]
-)
-
-print(
-    "Variables:",
-    columnas
-)
+print("Modelo:", paquete["nombre_modelo"])
+print("Version:", paquete["version"])
+print("Variables:", paquete["columnas"])
 
 
-# =========================================================
-# EJEMPLO 1 - PEDIDO DE MENOR RIESGO
-# =========================================================
-
-pedido_1 = {
-    "distancia_km": 1.8,
-    "duracion_estimada_min": 8,
-    "tiempo_preparacion_estimado_min": 8,
-    "cantidad_items": 2,
-    "hora_pedido": 16,
-    "dia_semana": 1,
-    "hora_pico": 0,
-    "fin_semana": 0,
-    "pedidos_activos": 1
+pedidos = {
+    "PEDIDO DE MENOR RIESGO": dict(
+        distancia_km=1.8,
+        duracion_estimada_min=8,
+        tiempo_preparacion_estimado_min=8,
+        cantidad_items=2,
+        pedidos_activos=0,
+        fecha_pedido=datetime(2026, 9, 29, 16, 0, tzinfo=TZ_PERU)
+    ),
+    "PEDIDO DE MAYOR RIESGO": dict(
+        distancia_km=7.2,
+        duracion_estimada_min=23,
+        tiempo_preparacion_estimado_min=18,
+        cantidad_items=5,
+        pedidos_activos=5,
+        fecha_pedido=datetime(2026, 10, 3, 20, 0, tzinfo=TZ_PERU)
+    )
 }
 
 
-# =========================================================
-# EJEMPLO 2 - PEDIDO DE MAYOR RIESGO
-# =========================================================
+for titulo, datos in pedidos.items():
 
-pedido_2 = {
-    "distancia_km": 7.2,
-    "duracion_estimada_min": 23,
-    "tiempo_preparacion_estimado_min": 18,
-    "cantidad_items": 5,
-    "hora_pedido": 20,
-    "dia_semana": 5,
-    "hora_pico": 1,
-    "fin_semana": 1,
-    "pedidos_activos": 8
-}
+    resultado = predecir_retraso(**datos)
 
-
-def predecir(datos):
-
-    entrada = pd.DataFrame(
-        [datos],
-        columns=columnas
-    )
-
-    clase = int(
-        modelo.predict(
-            entrada
-        )[0]
-    )
-
-    probabilidad = float(
-        modelo.predict_proba(
-            entrada
-        )[0][1]
-    )
-
-    resultado = (
-        "RETRASADO"
-        if clase == 1
-        else "A TIEMPO"
-    )
-
-    return (
-        resultado,
-        probabilidad
-    )
-
-
-for numero, pedido in enumerate(
-    [pedido_1, pedido_2],
-    start=1
-):
-
-    resultado, probabilidad = (
-        predecir(pedido)
-    )
-
-    print(
-        f"\n--- PEDIDO {numero} ---"
-    )
-
-    print(
-        "Prediccion:",
-        resultado
-    )
-
+    print(f"\n=== {titulo} ===")
+    print("Variables:", resultado["variables"])
+    print("Prediccion:", resultado["clase_predicha"])
     print(
         "Probabilidad de retraso:",
-        f"{probabilidad * 100:.2f}%"
+        f"{resultado['probabilidad_porcentaje']:.2f}%"
     )
-
-
-print("\n========================================")
-print("PRUEBA FINALIZADA")
-print("========================================")

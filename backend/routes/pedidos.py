@@ -1,5 +1,9 @@
 import json
+import os
 import secrets
+import subprocess
+import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -664,6 +668,8 @@ def crear_pedido():
                         fin_semana,
 
                         pedidos_activos,
+                        repartidores_disponibles,
+                        carga_repartidor,
 
                         zona_origen,
                         zona_destino
@@ -687,6 +693,8 @@ def crear_pedido():
                         %s,
                         %s,
 
+                        %s,
+                        %s,
                         %s,
 
                         %s,
@@ -733,6 +741,14 @@ def crear_pedido():
                     ],
 
                     pedidos_activos,
+
+                    variables_ml[
+                        "repartidores"
+                    ],
+
+                    variables_ml[
+                        "carga_repartidor"
+                    ],
 
                     sede["nombre"],
 
@@ -1122,17 +1138,6 @@ def mis_pedidos():
 @roles_required("ADMIN", "OPERADOR")
 def listar_pedidos():
 
-    # REAL (por defecto) | SINTETICO_ML | TODOS
-    fuente = str(
-        request.args.get("fuente", "REAL")
-    ).strip().upper()
-
-    if fuente not in ("REAL", "SINTETICO_ML", "TODOS"):
-        return jsonify({
-            "ok": False,
-            "mensaje": "Filtro de fuente no válido."
-        }), 400
-
     with get_connection() as conn:
         with conn.cursor() as cur:
 
@@ -1201,17 +1206,15 @@ def listar_pedidos():
 
             ) pm ON TRUE
 
-                WHERE %s = 'TODOS'
-                   OR COALESCE(
-                          p.fuente_datos,
-                          'REAL'
-                      ) = %s
+                -- Los registros sinteticos (SINTETICO_ML) quedan
+                -- en la BD pero no se muestran ni se usan.
+                WHERE COALESCE(
+                    p.fuente_datos,
+                    'REAL'
+                ) = 'REAL'
 
                 ORDER BY p.fecha_pedido DESC;
-            """, (
-                fuente,
-                fuente
-            ))
+            """)
 
             filas = cur.fetchall()
 
@@ -1622,12 +1625,34 @@ def actualizar_estado_pedido(pedido_id):
 # ADMIN / OPERADOR
 # =========================================================
 
+RAIZ_PROYECTO = Path(__file__).resolve().parents[2]
+
 RUTA_METRICAS_ML = (
-    Path(__file__).resolve().parents[2]
+    RAIZ_PROYECTO
     / "ml"
     / "metrics"
     / "metricas.json"
 )
+
+RUTA_HISTORIAL_ML = (
+    RAIZ_PROYECTO
+    / "ml"
+    / "metrics"
+    / "historial_modelos.json"
+)
+
+RUTA_REENTRENAR_ML = (
+    RAIZ_PROYECTO
+    / "ml"
+    / "reentrenar.py"
+)
+
+# Evita dos reentrenamientos a la vez en este proceso.
+BLOQUEO_REENTRENAMIENTO = threading.Lock()
+
+# v1.0 se entreno con datos sinteticos (descartado): sus
+# predicciones no cuentan en el rendimiento con pedidos reales.
+VERSIONES_DESCARTADAS = ("v1.0",)
 
 
 def _dividir(numerador, denominador):
@@ -1674,6 +1699,7 @@ def resumen_ml():
             ),
             "dataset": metricas.get("dataset"),
             "variables": metricas.get("variables", []),
+            "fuente_dataset": metricas.get("fuente_dataset"),
 
             "accuracy": resultado["accuracy_test"],
             "precision": resultado["precision_test"],
@@ -1720,6 +1746,7 @@ def resumen_ml():
                     FROM predicciones_ml
 
                     WHERE pedido_id = p.id
+                      AND modelo_version <> ALL(%s)
 
                     ORDER BY id DESC
 
@@ -1731,7 +1758,9 @@ def resumen_ml():
                     p.fuente_datos,
                     'REAL'
                 ) = 'REAL';
-            """)
+            """, (
+                list(VERSIONES_DESCARTADAS),
+            ))
 
             filas = cur.fetchall()
 
@@ -1767,6 +1796,14 @@ def resumen_ml():
 
     reales = {
         "pedidos_reales": len(filas),
+
+        # Entregados con resultado real: los que entran
+        # al dataset en un reentrenamiento.
+        "entregados_con_resultado": sum(
+            1 for fila in filas
+            if fila[1] is not None
+            and fila[2] is not None
+        ),
         "con_prediccion": len(con_prediccion),
         "evaluados": len(evaluados),
         "pendientes": len(con_prediccion) - len(evaluados),
@@ -1798,5 +1835,88 @@ def resumen_ml():
     return jsonify({
         "ok": True,
         "modelo": modelo,
-        "reales": reales
+        "reales": reales,
+        "historial": (
+            json.loads(
+                RUTA_HISTORIAL_ML.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if RUTA_HISTORIAL_ML.exists()
+            else []
+        )
+    })
+
+
+@pedidos_bp.post("/ml/reentrenar")
+@roles_required("ADMIN")
+def reentrenar_ml():
+
+    if not BLOQUEO_REENTRENAMIENTO.acquire(blocking=False):
+
+        return jsonify({
+            "ok": False,
+            "mensaje": "Ya hay un reentrenamiento en curso."
+        }), 409
+
+    try:
+
+        proceso = subprocess.run(
+            [sys.executable, str(RUTA_REENTRENAR_ML)],
+            cwd=RAIZ_PROYECTO,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            timeout=600
+        )
+
+    except subprocess.TimeoutExpired:
+
+        return jsonify({
+            "ok": False,
+            "mensaje": "El reentrenamiento superó el tiempo límite."
+        }), 504
+
+    finally:
+
+        BLOQUEO_REENTRENAMIENTO.release()
+
+    mensajes = {
+        0: "Nueva versión entrenada y activada: mejora al modelo anterior.",
+        2: "No hay pedidos reales nuevos desde el último entrenamiento.",
+        3: "Se entrenó una nueva versión, pero no mejora al modelo vigente. Se mantiene el actual."
+    }
+
+    if proceso.returncode not in mensajes:
+
+        return jsonify({
+            "ok": False,
+            "mensaje": "Error durante el reentrenamiento.",
+            "detalle": proceso.stderr[-2000:]
+        }), 500
+
+    historial = (
+        json.loads(
+            RUTA_HISTORIAL_ML.read_text(
+                encoding="utf-8"
+            )
+        )
+        if RUTA_HISTORIAL_ML.exists()
+        else []
+    )
+
+    return jsonify({
+        "ok": True,
+        "resultado": {
+            0: "PROMOVIDO",
+            2: "SIN_DATOS_NUEVOS",
+            3: "NO_PROMOVIDO"
+        }[proceso.returncode],
+        "mensaje": mensajes[proceso.returncode],
+        "ultima_version": (
+            historial[-1]
+            if historial and proceso.returncode != 2
+            else None
+        )
     })

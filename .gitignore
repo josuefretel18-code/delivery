@@ -5,3 +5,11 @@ __pycache__/
 
 
 .vscode/
+# Dataset publico externo (descargar de Kaggle: DoorDash ETA Prediction)
+ml/data/externo/
+
+# Dataset de entrenamiento generado (DoorDash + Kimbos): se regenera con ml/exportar_dataset.py
+ml/data/pedidos_ml.csv
+
+# Versiones anteriores archivadas al reentrenar (solo se versiona el modelo activo)
+ml/models/modelo_v*.joblib

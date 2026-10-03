@@ -1,0 +1,83 @@
+{
+    "dataset": {
+        "registros_totales": 1000,
+        "registros_entrenamiento": 800,
+        "registros_prueba": 200,
+        "a_tiempo": 547,
+        "retrasados": 453
+    },
+    "variables": [
+        "distancia_km",
+        "duracion_estimada_min",
+        "tiempo_preparacion_estimado_min",
+        "cantidad_items",
+        "hora_pedido",
+        "dia_semana",
+        "hora_pico",
+        "fin_semana",
+        "pedidos_activos"
+    ],
+    "modelo_seleccionado": "Regresion Logistica",
+    "version_modelo": "v1.0",
+    "criterio_seleccion": "Mayor F1 promedio en validacion cruzada",
+    "resultados": {
+        "Regresion Logistica": {
+            "f1_cv_promedio": 0.6393979925014408,
+            "f1_cv_desviacion": 0.036516694661061055,
+            "accuracy_test": 0.655,
+            "precision_test": 0.6078431372549019,
+            "recall_test": 0.6813186813186813,
+            "f1_test": 0.6424870466321243,
+            "roc_auc_test": 0.7377759854824075,
+            "matriz_confusion": [
+                [
+                    69,
+                    40
+                ],
+                [
+                    29,
+                    62
+                ]
+            ]
+        },
+        "Random Forest": {
+            "f1_cv_promedio": 0.6085656101682085,
+            "f1_cv_desviacion": 0.03420865528945877,
+            "accuracy_test": 0.67,
+            "precision_test": 0.6404494382022472,
+            "recall_test": 0.6263736263736264,
+            "f1_test": 0.6333333333333333,
+            "roc_auc_test": 0.7312229055348322,
+            "matriz_confusion": [
+                [
+                    77,
+                    32
+                ],
+                [
+                    34,
+                    57
+                ]
+            ]
+        },
+        "Gradient Boosting": {
+            "f1_cv_promedio": 0.568887418600198,
+            "f1_cv_desviacion": 0.03751353885155933,
+            "accuracy_test": 0.65,
+            "precision_test": 0.6296296296296297,
+            "recall_test": 0.5604395604395604,
+            "f1_test": 0.5930232558139535,
+            "roc_auc_test": 0.7112612158483718,
+            "matriz_confusion": [
+                [
+                    79,
+                    30
+                ],
+                [
+                    40,
+                    51
+                ]
+            ]
+        }
+    },
+    "fecha_entrenamiento_utc": "2026-09-28T02:57:36.590067+00:00"
+}

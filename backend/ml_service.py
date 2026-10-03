@@ -5,6 +5,13 @@ from zoneinfo import ZoneInfo
 import joblib
 import pandas as pd
 
+from ml.variables import (
+    es_hora_pico,
+    es_fin_semana,
+    repartidores_disponibles,
+    carga_repartidor
+)
+
 
 # =========================================================
 # CONFIGURACION
@@ -30,7 +37,9 @@ TZ_PERU = ZoneInfo(
 
 
 # =========================================================
-# CARGAR MODELO UNA SOLA VEZ
+# CARGAR MODELO
+# Se carga al iniciar y se vuelve a cargar solo si el
+# archivo cambia (por ejemplo, despues de reentrenar).
 # =========================================================
 
 if not RUTA_MODELO.exists():
@@ -41,25 +50,28 @@ if not RUTA_MODELO.exists():
     )
 
 
-PAQUETE_MODELO = joblib.load(
-    RUTA_MODELO
-)
+_CACHE_MODELO = {
+    "mtime": None,
+    "paquete": None
+}
 
-MODELO = PAQUETE_MODELO[
-    "modelo"
-]
 
-COLUMNAS = PAQUETE_MODELO[
-    "columnas"
-]
+def obtener_modelo():
 
-VERSION_MODELO = PAQUETE_MODELO[
-    "version"
-]
+    mtime = RUTA_MODELO.stat().st_mtime
 
-NOMBRE_MODELO = PAQUETE_MODELO[
-    "nombre_modelo"
-]
+    if _CACHE_MODELO["mtime"] != mtime:
+
+        _CACHE_MODELO["paquete"] = joblib.load(
+            RUTA_MODELO
+        )
+
+        _CACHE_MODELO["mtime"] = mtime
+
+    return _CACHE_MODELO["paquete"]
+
+
+obtener_modelo()
 
 
 # =========================================================
@@ -109,19 +121,23 @@ def predecir_retraso(
     )
 
 
-    hora_pico = int(
-        12 <= hora_pedido <= 14
-        or
-        19 <= hora_pedido <= 21
+    hora_pico = es_hora_pico(
+        hora_pedido
     )
 
 
-    fin_semana = int(
+    fin_semana = es_fin_semana(
         dia_semana
-        in (4, 5, 6)
     )
 
 
+    repartidores = (
+        repartidores_disponibles()
+    )
+
+
+    # Se calculan todas las variables conocidas; el modelo
+    # toma solo las columnas con las que fue entrenado.
     datos = {
 
         "distancia_km":
@@ -151,13 +167,26 @@ def predecir_retraso(
             int(fin_semana),
 
         "pedidos_activos":
-            int(pedidos_activos)
+            int(pedidos_activos),
+
+        "repartidores":
+            int(repartidores),
+
+        "carga_repartidor":
+            carga_repartidor(
+                int(pedidos_activos),
+                repartidores
+            )
     }
 
 
+    paquete = obtener_modelo()
+
+    MODELO = paquete["modelo"]
+
     entrada = pd.DataFrame(
         [datos],
-        columns=COLUMNAS
+        columns=paquete["columnas"]
     )
 
 
@@ -202,10 +231,10 @@ def predecir_retraso(
             ),
 
         "modelo_version":
-            VERSION_MODELO,
+            paquete["version"],
 
         "modelo_nombre":
-            NOMBRE_MODELO,
+            paquete["nombre_modelo"],
 
         "variables":
             datos

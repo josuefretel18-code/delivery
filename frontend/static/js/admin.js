@@ -1,6 +1,5 @@
 let usuarioAdmin = null;
 let catalogoAdmin = [];
-let filtroFuentePedidos = "REAL";
 
 
 /* ========================================================
@@ -20,19 +19,6 @@ document.addEventListener(
             "click",
             cargarPedidosAdmin
         );
-
-        document.querySelectorAll(
-            "#filtroFuentePedidos button"
-        ).forEach(boton => {
-
-            boton.addEventListener(
-                "click",
-                () => cambiarFiltroFuente(
-                    boton.dataset.fuente
-                )
-            );
-
-        });
 
         document.getElementById(
             "btnCerrarSesionAdmin"
@@ -395,7 +381,7 @@ async function cargarPedidosAdmin() {
 
         const respuesta =
             await fetch(
-                `/api/pedidos?fuente=${filtroFuentePedidos}`,
+                "/api/pedidos",
                 {
                     headers: {
                         "Authorization":
@@ -470,24 +456,6 @@ async function cargarPedidosAdmin() {
 }
 
 
-function cambiarFiltroFuente(fuente) {
-
-    filtroFuentePedidos = fuente;
-
-    document.querySelectorAll(
-        "#filtroFuentePedidos button"
-    ).forEach(boton => {
-
-        boton.classList.toggle(
-            "activo",
-            boton.dataset.fuente === fuente
-        );
-
-    });
-
-    cargarPedidosAdmin();
-
-}
 /* ========================================================
    DASHBOARD ML
 ======================================================== */
@@ -657,13 +625,30 @@ function renderizarDashboardML(datos) {
                     1. Evaluación del modelo
                 </h5>
 
-                <p class="text-secondary small mb-3">
+                <p class="text-secondary small mb-2">
                     ${escaparHtmlAdmin(modelo.nombre)}
                     ${escaparHtmlAdmin(modelo.version || "")}
-                    · Prueba con ${modelo.dataset.registros_prueba}
-                    de ${modelo.dataset.registros_totales} registros sintéticos
+                    · Prueba con ${modelo.dataset.registros_prueba.toLocaleString("es-PE")}
+                    de ${modelo.dataset.registros_totales.toLocaleString("es-PE")} registros reales
+                    (${(modelo.dataset.registros_externos ?? 0).toLocaleString("es-PE")} DoorDash
+                    + ${modelo.dataset.registros_reales ?? 0} Kimbos)
                     · ${escaparHtmlAdmin(modelo.criterio || "")}
                 </p>
+
+                ${
+                    modelo.fuente_dataset
+                        ? `
+                            <div class="alert alert-light border small mb-3">
+                                <strong>Fuente:</strong>
+                                ${escaparHtmlAdmin(modelo.fuente_dataset.fuente_externa)}.
+                                ${escaparHtmlAdmin(modelo.fuente_dataset.descripcion_externa)}
+                                <br>
+                                <strong>Regla de retraso:</strong>
+                                ${escaparHtmlAdmin(modelo.fuente_dataset.regla_retraso)}
+                            </div>
+                        `
+                        : ""
+                }
 
                 <div class="row g-3 mb-4">
                     ${tarjetaMetricaML("Accuracy", porcentajeML(modelo.accuracy), "Predicciones correctas del total")}
@@ -741,6 +726,7 @@ function renderizarDashboardML(datos) {
         html += `
             <div class="alert alert-light border">
                 Aún no hay pedidos reales con predicción y resultado real.
+                (Las predicciones del modelo sintético v1.0, ya descartado, no se cuentan.)
             </div>
         `;
 
@@ -807,9 +793,232 @@ function renderizarDashboardML(datos) {
     html += `</section>`;
 
 
+    // ---------- Evolución del modelo ----------
+
+    if (modelo) {
+
+        const realesEnModelo =
+            modelo.dataset.registros_reales ?? 0;
+
+        // Nuevos respecto del último entrenamiento,
+        // aunque esa versión no haya sido promovida.
+        const realesUltimoEntrenamiento = Math.max(
+            realesEnModelo,
+            ...datos.historial.map(
+                version => version.registros_reales
+            )
+        );
+
+        const realesNuevos = Math.max(
+            reales.entregados_con_resultado - realesUltimoEntrenamiento,
+            0
+        );
+
+        // Antes del primer reentrenamiento no hay historial:
+        // se muestra la versión vigente.
+        const historial =
+            datos.historial.length > 0
+                ? datos.historial
+                : [{
+                    version: modelo.version,
+                    fecha_entrenamiento_utc: modelo.fecha_entrenamiento,
+                    modelo: modelo.nombre,
+                    registros_externos: modelo.dataset.registros_externos ?? 0,
+                    registros_reales: 0,
+                    f1_cv: modelo.comparacion.find(
+                        fila => fila.modelo === modelo.nombre
+                    ).f1_cv,
+                    accuracy: modelo.accuracy,
+                    f1: modelo.f1,
+                    roc_auc: modelo.roc_auc,
+                    promovido: true
+                }];
+
+        const filasHistorial =
+            historial
+                .slice()
+                .reverse()
+                .map(version => {
+
+                    const estado =
+                        version.version === modelo.version
+                            ? `<span class="estado-version activa">Activa</span>`
+                            : version.promovido
+                                ? `<span class="estado-version">Anterior</span>`
+                                : `<span class="estado-version rechazada">No mejoró</span>`;
+
+                    return `
+                        <tr class="${version.version === modelo.version ? "fila-ml-seleccionada" : ""}">
+                            <td>${escaparHtmlAdmin(version.version)}</td>
+                            <td>${formatearFechaAdmin(version.fecha_entrenamiento_utc)}</td>
+                            <td>${escaparHtmlAdmin(version.modelo)}</td>
+                            <td>${(version.registros_externos ?? 0).toLocaleString("es-PE")}</td>
+                            <td>${version.registros_reales}</td>
+                            <td>${version.f1_cv.toFixed(3)}</td>
+                            <td>${porcentajeML(version.accuracy)}</td>
+                            <td>${version.f1.toFixed(3)}</td>
+                            <td>${version.roc_auc.toFixed(3)}</td>
+                            <td>${estado}</td>
+                        </tr>
+                    `;
+
+                })
+                .join("");
+
+        const puedeReentrenar =
+            usuarioAdmin &&
+            usuarioAdmin.rol === "ADMIN";
+
+        html += `
+            <section class="seccion-ml">
+
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+
+                    <div>
+                        <h5 class="fw-bold mb-1">
+                            3. Evolución del modelo
+                        </h5>
+
+                        <p class="text-secondary small mb-0">
+                            Versión activa ${escaparHtmlAdmin(modelo.version)}:
+                            entrenada con ${(modelo.dataset.registros_totales - realesEnModelo).toLocaleString("es-PE")} pedidos DoorDash
+                            + ${realesEnModelo} pedidos reales de Kimbos
+                            · <strong>${realesNuevos}</strong> pedido(s) real(es) entregado(s)
+                            nuevo(s) desde el último entrenamiento
+                        </p>
+                    </div>
+
+                    ${
+                        puedeReentrenar
+                            ? `
+                                <button
+                                    id="btnReentrenarML"
+                                    class="btn btn-dark"
+                                    type="button"
+                                    onclick="reentrenarModeloML()"
+                                    ${realesNuevos === 0 ? "disabled" : ""}
+                                >
+                                    ↻ Reentrenar con datos actuales
+                                </button>
+                            `
+                            : ""
+                    }
+
+                </div>
+
+                <p class="small text-secondary">
+                    El reentrenamiento une el dataset DoorDash con los pedidos reales de Kimbos
+                    entregados y entrena una nueva versión. Solo reemplaza al modelo activo
+                    si su F1 en validación cruzada es igual o mejor.
+                </p>
+
+                <div id="resultadoReentrenoML"></div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm tabla-ml">
+                        <thead>
+                            <tr>
+                                <th>Versión</th>
+                                <th>Fecha</th>
+                                <th>Modelo</th>
+                                <th>DoorDash</th>
+                                <th>Kimbos</th>
+                                <th>F1 CV</th>
+                                <th>Accuracy</th>
+                                <th>F1</th>
+                                <th>ROC-AUC</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filasHistorial}
+                        </tbody>
+                    </table>
+                </div>
+
+            </section>
+        `;
+
+    }
+
+
     document.getElementById(
         "contenidoDashboardML"
     ).innerHTML = html;
+
+}
+
+
+async function reentrenarModeloML() {
+
+    if (
+        !confirm(
+            "¿Reentrenar el modelo con el dataset DoorDash y los pedidos reales entregados de Kimbos?"
+        )
+    ) {
+        return;
+    }
+
+    const token =
+        localStorage.getItem(
+            "kimbos_admin_token"
+        );
+
+    const boton =
+        document.getElementById(
+            "btnReentrenarML"
+        );
+
+    boton.disabled = true;
+    boton.textContent = "Reentrenando...";
+
+    try {
+
+        const respuesta =
+            await fetch(
+                "/api/pedidos/ml/reentrenar",
+                {
+                    method: "POST",
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+        const datos =
+            await respuesta.json();
+
+        if (
+            !respuesta.ok ||
+            !datos.ok
+        ) {
+
+            throw new Error(
+                datos.mensaje ||
+                "No se pudo reentrenar el modelo."
+            );
+
+        }
+
+        await cargarDashboardML();
+
+        document.getElementById(
+            "resultadoReentrenoML"
+        ).innerHTML = `
+            <div class="alert ${datos.resultado === "PROMOVIDO" ? "alert-success" : "alert-warning"} small">
+                ${escaparHtmlAdmin(datos.mensaje)}
+            </div>
+        `;
+
+    } catch (error) {
+
+        boton.disabled = false;
+        boton.textContent = "↻ Reentrenar con datos actuales";
+
+        alert(error.message);
+
+    }
 
 }
 /* ========================================================
@@ -936,11 +1145,6 @@ function renderizarPedidosAdmin(pedidos) {
                                 ${escaparHtmlAdmin(
                                     pedido.codigo
                                 )}
-                                ${
-                                    pedido.fuente_datos === "SINTETICO_ML"
-                                        ? `<span class="badge-dato-ml">Dato ML</span>`
-                                        : ""
-                                }
                             </div>
 
                             <small class="text-secondary">

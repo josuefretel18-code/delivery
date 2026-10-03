@@ -488,51 +488,6 @@ body {
 }
 
 /* ========================================================
-   FILTRO POR FUENTE (Todos | Reales | Datos ML)
-======================================================== */
-
-.filtro-fuente {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 4px;
-    border-radius: 12px;
-    background: #f1f1f1;
-}
-
-.filtro-fuente button {
-    border: 0;
-    padding: 7px 16px;
-    border-radius: 9px;
-    background: transparent;
-    color: #555;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-
-.filtro-fuente button:hover {
-    color: var(--oscuro);
-}
-
-.filtro-fuente button.activo {
-    background: var(--oscuro);
-    color: #fff;
-}
-
-.badge-dato-ml {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 2px 8px;
-    border-radius: 20px;
-    background: #ece9ff;
-    color: #4b3fb5;
-    font-size: 0.72rem;
-    font-weight: 700;
-    vertical-align: middle;
-}
-
-
-/* ========================================================
    DASHBOARD ML
 ======================================================== */
 
@@ -620,4 +575,24 @@ body {
 .tabla-ml .fila-ml-seleccionada td {
     background: #fff1e7;
     font-weight: 700;
+}
+
+.estado-version {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #f1f1f1;
+    color: #555;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.estado-version.activa {
+    background: #e8f6ee;
+    color: #19713f;
+}
+
+.estado-version.rechazada {
+    background: #fdecec;
+    color: #a83232;
 }
