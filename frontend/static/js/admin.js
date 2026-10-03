@@ -1,5 +1,6 @@
 let usuarioAdmin = null;
 let catalogoAdmin = [];
+let filtroFuentePedidos = "REAL";
 
 
 /* ========================================================
@@ -19,6 +20,19 @@ document.addEventListener(
             "click",
             cargarPedidosAdmin
         );
+
+        document.querySelectorAll(
+            "#filtroFuentePedidos button"
+        ).forEach(boton => {
+
+            boton.addEventListener(
+                "click",
+                () => cambiarFiltroFuente(
+                    boton.dataset.fuente
+                )
+            );
+
+        });
 
         document.getElementById(
             "btnCerrarSesionAdmin"
@@ -375,7 +389,7 @@ async function cargarPedidosAdmin() {
 
         const respuesta =
             await fetch(
-                "/api/pedidos",
+                `/api/pedidos?fuente=${filtroFuentePedidos}`,
                 {
                     headers: {
                         "Authorization":
@@ -448,6 +462,26 @@ async function cargarPedidosAdmin() {
     }
 
 }
+
+
+function cambiarFiltroFuente(fuente) {
+
+    filtroFuentePedidos = fuente;
+
+    document.querySelectorAll(
+        "#filtroFuentePedidos button"
+    ).forEach(boton => {
+
+        boton.classList.toggle(
+            "activo",
+            boton.dataset.fuente === fuente
+        );
+
+    });
+
+    cargarPedidosAdmin();
+
+}
 /* ========================================================
    CONTADORES
 ======================================================== */
@@ -516,7 +550,7 @@ function renderizarPedidosAdmin(pedidos) {
         );
 
 
-    contenedor.innerHTML = "";
+    const tarjetas = [];
 
 
     pedidos.forEach(pedido => {
@@ -552,7 +586,7 @@ function renderizarPedidosAdmin(pedidos) {
             );
 
 
-        contenedor.innerHTML += `
+        tarjetas.push(`
             <div class="col-12 col-lg-6">
 
                 <div class="pedido-admin-card">
@@ -572,6 +606,11 @@ function renderizarPedidosAdmin(pedidos) {
                                 ${escaparHtmlAdmin(
                                     pedido.codigo
                                 )}
+                                ${
+                                    pedido.fuente_datos === "SINTETICO_ML"
+                                        ? `<span class="badge-dato-ml">Dato ML</span>`
+                                        : ""
+                                }
                             </div>
 
                             <small class="text-secondary">
@@ -911,9 +950,12 @@ function renderizarPedidosAdmin(pedidos) {
                 </div>
 
             </div>
-        `;
+        `);
 
     });
+
+
+    contenedor.innerHTML = tarjetas.join("");
 
 }
 /* ========================================================

@@ -1120,6 +1120,17 @@ def mis_pedidos():
 @roles_required("ADMIN", "OPERADOR")
 def listar_pedidos():
 
+    # REAL (por defecto) | SINTETICO_ML | TODOS
+    fuente = str(
+        request.args.get("fuente", "REAL")
+    ).strip().upper()
+
+    if fuente not in ("REAL", "SINTETICO_ML", "TODOS"):
+        return jsonify({
+            "ok": False,
+            "mensaje": "Filtro de fuente no válido."
+        }), 400
+
     with get_connection() as conn:
         with conn.cursor() as cur:
 
@@ -1159,7 +1170,11 @@ def listar_pedidos():
                     pm.probabilidad_retraso,
                     pm.fecha_prediccion,
                     p.duracion_real_min,
-                    p.retraso
+                    p.retraso,
+                    COALESCE(
+                        p.fuente_datos,
+                        'REAL'
+                    )
 
                 FROM pedidos p
 
@@ -1184,50 +1199,65 @@ def listar_pedidos():
 
             ) pm ON TRUE
 
-                WHERE COALESCE(
-                    p.fuente_datos,
-                    'REAL'
-                ) = 'REAL'
+                WHERE %s = 'TODOS'
+                   OR COALESCE(
+                          p.fuente_datos,
+                          'REAL'
+                      ) = %s
 
                 ORDER BY p.fecha_pedido DESC;
-            """)
+            """, (
+                fuente,
+                fuente
+            ))
 
             filas = cur.fetchall()
+
+
+            # Productos de todos los pedidos en una sola
+            # consulta (evita una consulta por pedido).
+
+            cur.execute("""
+                SELECT
+                    pedido_id,
+                    producto_id,
+                    nombre_producto,
+                    precio_unitario,
+                    cantidad,
+                    subtotal
+
+                FROM detalle_pedido
+
+                WHERE pedido_id = ANY(%s)
+
+                ORDER BY pedido_id, id;
+            """, (
+                [fila[0] for fila in filas],
+            ))
+
+            productos_por_pedido = {}
+
+            for producto in cur.fetchall():
+
+                productos_por_pedido.setdefault(
+                    producto[0],
+                    []
+                ).append({
+                    "producto_id": producto[1],
+                    "nombre": producto[2],
+                    "precio_unitario": float(producto[3]),
+                    "cantidad": producto[4],
+                    "subtotal": float(producto[5])
+                })
 
             pedidos = []
 
             for fila in filas:
 
-                pedido_id = fila[0]
-
-                cur.execute("""
-                    SELECT
-                        producto_id,
-                        nombre_producto,
-                        precio_unitario,
-                        cantidad,
-                        subtotal
-
-                    FROM detalle_pedido
-
-                    WHERE pedido_id = %s
-
-                    ORDER BY id;
-                """, (
-                    pedido_id,
-                ))
-
-                productos = []
-
-                for producto in cur.fetchall():
-
-                    productos.append({
-                        "producto_id": producto[0],
-                        "nombre": producto[1],
-                        "precio_unitario": float(producto[2]),
-                        "cantidad": producto[3],
-                        "subtotal": float(producto[4])
-                    })
+                productos = productos_por_pedido.get(
+                    fila[0],
+                    []
+                )
 
                 pedidos.append({
 
@@ -1356,6 +1386,8 @@ def listar_pedidos():
 
                     else None
                 ),
+
+                    "fuente_datos": fila[27],
 
                     "productos": productos
                 })
