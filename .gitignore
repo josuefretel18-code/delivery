@@ -13,3 +13,7 @@ ml/data/pedidos_ml.csv
 
 # Versiones anteriores archivadas al reentrenar (solo se versiona el modelo activo)
 ml/models/modelo_v*.joblib
+
+# Estado en tiempo de ejecucion del reentrenamiento
+ml/metrics/.reentrenando.lock
+ml/metrics/estado_reentrenamiento.json

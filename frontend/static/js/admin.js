@@ -460,7 +460,17 @@ async function cargarPedidosAdmin() {
    DASHBOARD ML
 ======================================================== */
 
-async function cargarDashboardML() {
+let temporizadorDashboardML = null;
+
+
+async function cargarDashboardML(opciones) {
+
+    // Silencioso = refresco automático: sin vaciar ni mostrar "Cargando".
+    // (Desde el botón llega el evento click, que no trae "silencioso").
+    const silencioso =
+        opciones?.silencioso === true;
+
+    clearTimeout(temporizadorDashboardML);
 
     const token =
         localStorage.getItem(
@@ -477,8 +487,10 @@ async function cargarDashboardML() {
             "contenidoDashboardML"
         );
 
-    cargando.classList.remove("d-none");
-    contenido.innerHTML = "";
+    if (!silencioso) {
+        cargando.classList.remove("d-none");
+        contenido.innerHTML = "";
+    }
 
     try {
 
@@ -710,83 +722,131 @@ function renderizarDashboardML(datos) {
         <section class="seccion-ml">
 
             <h5 class="fw-bold mb-1">
-                2. Rendimiento en pedidos reales
+                2. Predicciones en pedidos reales
             </h5>
 
             <p class="text-secondary small mb-3">
-                ${reales.pedidos_reales} pedidos reales
-                · ${reales.con_prediccion} con predicción
-                · ${reales.evaluados} entregados y evaluados
-                · ${reales.pendientes} pendientes de entrega
+                Qué predijo el modelo en cada pedido de Kimbos y qué pasó realmente al entregarlo.
             </p>
+
+            <div class="row g-3 mb-3">
+                ${tarjetaMetricaML("Pedidos evaluados", reales.evaluados, `${reales.pendientes} pendiente(s) de entrega`)}
+                ${tarjetaMetricaML("Aciertos", reales.correctas, "La predicción coincidió")}
+                ${tarjetaMetricaML("Fallos", reales.incorrectas, "La predicción no coincidió")}
+                ${tarjetaMetricaML("% de acierto", porcentajeML(reales.accuracy), "Aciertos ÷ evaluados")}
+            </div>
     `;
 
-    if (reales.evaluados === 0) {
+    if (reales.detalle.length === 0) {
 
         html += `
             <div class="alert alert-light border">
-                Aún no hay pedidos reales con predicción y resultado real.
+                Aún no hay pedidos reales con predicción del modelo actual.
                 (Las predicciones del modelo sintético v1.0, ya descartado, no se cuentan.)
             </div>
         `;
 
     } else {
 
+        const filasDetalle =
+            reales.detalle
+                .map(pedido => {
+
+                    const textoClase = clase =>
+                        clase === "RETRASADO" ? "Retrasado" : "A tiempo";
+
+                    const resultado =
+                        pedido.acerto === null
+                            ? `<span class="estado-version">Pendiente</span>`
+                            : pedido.acerto
+                                ? `<span class="estado-version activa">✓ Acertó</span>`
+                                : `<span class="estado-version rechazada">✕ Falló</span>`;
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>${escaparHtmlAdmin(pedido.codigo)}</strong>
+                                <div class="small text-secondary">
+                                    ${formatearFechaAdmin(pedido.fecha_pedido)}
+                                </div>
+                            </td>
+                            <td>
+                                ${textoClase(pedido.prediccion)}
+                                <div class="small text-secondary">
+                                    ${pedido.probabilidad_porcentaje ?? "--"}% riesgo
+                                    · ${escaparHtmlAdmin(pedido.modelo_version || "")}
+                                </div>
+                            </td>
+                            <td>
+                                ${
+                                    pedido.resultado_real
+                                        ? `
+                                            ${textoClase(pedido.resultado_real)}
+                                            <div class="small text-secondary">
+                                                ${pedido.duracion_real_min} min
+                                                (estimado ${pedido.tiempo_estimado_min ?? "--"} min)
+                                            </div>
+                                        `
+                                        : `<span class="text-secondary">En curso</span>`
+                                }
+                            </td>
+                            <td>${resultado}</td>
+                        </tr>
+                    `;
+
+                })
+                .join("");
+
         html += `
-            ${
-                reales.evaluados < 30
-                    ? `
-                        <div class="alert alert-warning small">
-                            Solo ${reales.evaluados} pedido(s) evaluado(s).
-                            Con tan pocos datos estas cifras no son concluyentes.
-                        </div>
-                    `
-                    : ""
-            }
-
-            <div class="row g-3 mb-4">
-                ${tarjetaMetricaML("Correctas", reales.correctas, "Predicción = resultado real")}
-                ${tarjetaMetricaML("Incorrectas", reales.incorrectas, "Predicción ≠ resultado real")}
-                ${tarjetaMetricaML("Accuracy", porcentajeML(reales.accuracy), "Aciertos sobre evaluados")}
-                ${tarjetaMetricaML("A tiempo (real)", reales.reales_a_tiempo, `Predichos: ${reales.predichos_a_tiempo}`)}
-                ${tarjetaMetricaML("Retrasados (real)", reales.reales_retrasados, `Predichos: ${reales.predichos_retrasado}`)}
-            </div>
-
-            <div class="row g-4 align-items-start">
-
-                <div class="col-lg-5">
-                    <h6 class="fw-bold">Matriz de confusión</h6>
-                    ${matrizConfusionML(reales.matriz_confusion)}
-                </div>
-
-                <div class="col-lg-7">
-                    <div class="row g-3">
-                        ${tarjetaMetricaML(
-                            "Precision",
-                            porcentajeML(reales.precision),
-                            reales.precision === null
-                                ? "Sin datos: aún no predijo ningún retraso"
-                                : "Cuando avisa retraso, acierta"
-                        )}
-                        ${tarjetaMetricaML(
-                            "Recall",
-                            porcentajeML(reales.recall),
-                            reales.recall === null
-                                ? "Sin datos: aún no hubo retrasos reales"
-                                : "Retrasos reales que detecta"
-                        )}
-                        ${tarjetaMetricaML(
-                            "F1-score",
-                            reales.f1 === null ? "--" : reales.f1.toFixed(3),
-                            reales.f1 === null
-                                ? "Sin datos: requiere precision y recall"
-                                : "Balance precision / recall"
-                        )}
-                    </div>
-                </div>
-
+            <div class="table-responsive">
+                <table class="table table-sm tabla-ml align-middle">
+                    <thead>
+                        <tr>
+                            <th>Pedido</th>
+                            <th>Predicción del modelo</th>
+                            <th>Resultado real</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filasDetalle}
+                    </tbody>
+                </table>
             </div>
         `;
+
+        // Matriz y métricas avanzadas solo con datos suficientes.
+        if (reales.evaluados >= 30) {
+
+            html += `
+                <div class="row g-4 align-items-start mt-1">
+
+                    <div class="col-lg-5">
+                        <h6 class="fw-bold">Matriz de confusión</h6>
+                        ${matrizConfusionML(reales.matriz_confusion)}
+                    </div>
+
+                    <div class="col-lg-7">
+                        <div class="row g-3">
+                            ${tarjetaMetricaML("Precision", porcentajeML(reales.precision), "Cuando avisa retraso, acierta")}
+                            ${tarjetaMetricaML("Recall", porcentajeML(reales.recall), "Retrasos reales que detecta")}
+                            ${tarjetaMetricaML("F1-score", reales.f1 === null ? "--" : reales.f1.toFixed(3), "Balance precision / recall")}
+                        </div>
+                    </div>
+
+                </div>
+            `;
+
+        } else {
+
+            html += `
+                <p class="small text-secondary mb-0">
+                    La matriz de confusión y las métricas Precision, Recall y F1 de pedidos reales
+                    se mostrarán al llegar a 30 pedidos evaluados (van ${reales.evaluados}).
+                </p>
+            `;
+
+        }
 
     }
 
@@ -836,7 +896,7 @@ function renderizarDashboardML(datos) {
 
         const filasHistorial =
             historial
-                .slice()
+                .slice(-10)
                 .reverse()
                 .map(version => {
 
@@ -869,6 +929,29 @@ function renderizarDashboardML(datos) {
             usuarioAdmin &&
             usuarioAdmin.rol === "ADMIN";
 
+        const estadoReentreno =
+            datos.reentrenamiento || {};
+
+        const avisoReentreno =
+            estadoReentreno.en_curso
+                ? `
+                    <div class="alert alert-info small d-flex align-items-center gap-2">
+                        <span class="spinner-border spinner-border-sm"></span>
+                        Reentrenando el modelo con el último pedido entregado...
+                        (alrededor de 1 minuto; esta sección se actualiza sola)
+                    </div>
+                `
+                : estadoReentreno.fin
+                    ? `
+                        <div class="alert ${estadoReentreno.resultado === "ERROR" ? "alert-danger" : "alert-light border"} small">
+                            <strong>Último reentrenamiento
+                            (${estadoReentreno.origen === "AUTOMATICO" ? "automático" : "manual"},
+                            ${formatearFechaAdmin(estadoReentreno.fin)}):</strong>
+                            ${escaparHtmlAdmin(estadoReentreno.mensaje || "")}
+                        </div>
+                    `
+                    : "";
+
         html += `
             <section class="seccion-ml">
 
@@ -896,7 +979,7 @@ function renderizarDashboardML(datos) {
                                     class="btn btn-dark"
                                     type="button"
                                     onclick="reentrenarModeloML()"
-                                    ${realesNuevos === 0 ? "disabled" : ""}
+                                    ${realesNuevos === 0 || estadoReentreno.en_curso ? "disabled" : ""}
                                 >
                                     ↻ Reentrenar con datos actuales
                                 </button>
@@ -907,10 +990,17 @@ function renderizarDashboardML(datos) {
                 </div>
 
                 <p class="small text-secondary">
-                    El reentrenamiento une el dataset DoorDash con los pedidos reales de Kimbos
-                    entregados y entrena una nueva versión. Solo reemplaza al modelo activo
+                    ${
+                        estadoReentreno.automatico
+                            ? "<strong>Reentrenamiento automático activo:</strong> cada vez que un pedido se marca como entregado, "
+                            : "Reentrenamiento manual: "
+                    }
+                    se une el dataset DoorDash con los pedidos reales de Kimbos entregados
+                    y se entrena una nueva versión. Solo reemplaza al modelo activo
                     si su F1 en validación cruzada es igual o mejor.
                 </p>
+
+                ${avisoReentreno}
 
                 <div id="resultadoReentrenoML"></div>
 
@@ -945,6 +1035,26 @@ function renderizarDashboardML(datos) {
     document.getElementById(
         "contenidoDashboardML"
     ).innerHTML = html;
+
+
+    // Mientras se reentrena, refrescar cada 10 s (solo si el
+    // modal sigue abierto).
+    if (datos.reentrenamiento?.en_curso) {
+
+        temporizadorDashboardML = setTimeout(() => {
+
+            const modalAbierto =
+                document.getElementById(
+                    "modalDashboardML"
+                ).classList.contains("show");
+
+            if (modalAbierto) {
+                cargarDashboardML({ silencioso: true });
+            }
+
+        }, 10000);
+
+    }
 
 }
 

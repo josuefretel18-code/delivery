@@ -1,9 +1,6 @@
 import json
 import os
 import secrets
-import subprocess
-import sys
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +10,12 @@ from db import get_connection
 from backend.decorators import token_required, roles_required
 from decimal import Decimal, ROUND_HALF_UP
 from backend.ml_service import predecir_retraso
+from backend.ml_reentrenamiento import (
+    iniciar_reentrenamiento_automatico,
+    leer_estado as leer_estado_reentrenamiento,
+    reentrenamiento_automatico_activo,
+    reentrenar_manual
+)
 
 
 pedidos_bp = Blueprint(
@@ -1607,6 +1610,14 @@ def actualizar_estado_pedido(pedido_id):
 
         conn.commit()
 
+    # Un pedido entregado aporta un resultado real nuevo:
+    # reentrenar en segundo plano (no retrasa esta respuesta).
+    if (
+        nuevo_estado == "ENTREGADO"
+        and reentrenamiento_automatico_activo()
+    ):
+        iniciar_reentrenamiento_automatico()
+
     return jsonify({
         "ok": True,
         "mensaje": "Estado actualizado correctamente",
@@ -1640,15 +1651,6 @@ RUTA_HISTORIAL_ML = (
     / "metrics"
     / "historial_modelos.json"
 )
-
-RUTA_REENTRENAR_ML = (
-    RAIZ_PROYECTO
-    / "ml"
-    / "reentrenar.py"
-)
-
-# Evita dos reentrenamientos a la vez en este proceso.
-BLOQUEO_REENTRENAMIENTO = threading.Lock()
 
 # v1.0 se entreno con datos sinteticos (descartado): sus
 # predicciones no cuentan en el rendimiento con pedidos reales.
@@ -1735,13 +1737,22 @@ def resumen_ml():
                 SELECT
                     pm.clase_predicha,
                     p.retraso,
-                    p.duracion_real_min
+                    p.duracion_real_min,
+
+                    p.codigo,
+                    p.fecha_pedido,
+                    pm.probabilidad_retraso,
+                    pm.modelo_version,
+                    p.tiempo_estimado_total_min
 
                 FROM pedidos p
 
                 LEFT JOIN LATERAL (
 
-                    SELECT clase_predicha
+                    SELECT
+                        clase_predicha,
+                        probabilidad_retraso,
+                        modelo_version
 
                     FROM predicciones_ml
 
@@ -1757,7 +1768,9 @@ def resumen_ml():
                 WHERE COALESCE(
                     p.fuente_datos,
                     'REAL'
-                ) = 'REAL';
+                ) = 'REAL'
+
+                ORDER BY p.fecha_pedido DESC;
             """, (
                 list(VERSIONES_DESCARTADAS),
             ))
@@ -1780,12 +1793,46 @@ def resumen_ml():
     # Columnas = predicho (0 A_TIEMPO, 1 RETRASADO)
     matriz = [[0, 0], [0, 0]]
 
-    for clase_predicha, retraso, _ in evaluados:
+    for fila in evaluados:
 
-        real = 1 if retraso else 0
-        predicho = 1 if clase_predicha == "RETRASADO" else 0
+        real = 1 if fila[1] else 0
+        predicho = 1 if fila[0] == "RETRASADO" else 0
 
         matriz[real][predicho] += 1
+
+
+    # Pedido por pedido (los 20 más recientes con predicción).
+    detalle = []
+
+    for fila in con_prediccion[:20]:
+
+        entregado = fila[1] is not None and fila[2] is not None
+
+        resultado_real = (
+            ("RETRASADO" if fila[1] else "A_TIEMPO")
+            if entregado
+            else None
+        )
+
+        detalle.append({
+            "codigo": fila[3],
+            "fecha_pedido": fila[4].isoformat() if fila[4] else None,
+            "prediccion": fila[0],
+            "probabilidad_porcentaje": (
+                round(float(fila[5]) * 100, 2)
+                if fila[5] is not None
+                else None
+            ),
+            "modelo_version": fila[6],
+            "tiempo_estimado_min": fila[7],
+            "duracion_real_min": fila[2],
+            "resultado_real": resultado_real,
+            "acerto": (
+                fila[0] == resultado_real
+                if entregado
+                else None
+            )
+        })
 
     vn, fp = matriz[0]
     fn, vp = matriz[1]
@@ -1817,6 +1864,7 @@ def resumen_ml():
         "reales_retrasados": fn + vp,
 
         "matriz_confusion": matriz,
+        "detalle": detalle,
 
         "accuracy": _dividir(correctas, len(evaluados)),
         "precision": precision,
@@ -1836,6 +1884,7 @@ def resumen_ml():
         "ok": True,
         "modelo": modelo,
         "reales": reales,
+        "reentrenamiento": leer_estado_reentrenamiento(),
         "historial": (
             json.loads(
                 RUTA_HISTORIAL_ML.read_text(
@@ -1852,71 +1901,25 @@ def resumen_ml():
 @roles_required("ADMIN")
 def reentrenar_ml():
 
-    if not BLOQUEO_REENTRENAMIENTO.acquire(blocking=False):
+    resultado = reentrenar_manual()
+
+    if resultado is None:
 
         return jsonify({
             "ok": False,
             "mensaje": "Ya hay un reentrenamiento en curso."
         }), 409
 
-    try:
-
-        proceso = subprocess.run(
-            [sys.executable, str(RUTA_REENTRENAR_ML)],
-            cwd=RAIZ_PROYECTO,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-            timeout=600
-        )
-
-    except subprocess.TimeoutExpired:
+    if resultado["resultado"] == "ERROR":
 
         return jsonify({
             "ok": False,
-            "mensaje": "El reentrenamiento superó el tiempo límite."
-        }), 504
-
-    finally:
-
-        BLOQUEO_REENTRENAMIENTO.release()
-
-    mensajes = {
-        0: "Nueva versión entrenada y activada: mejora al modelo anterior.",
-        2: "No hay pedidos reales nuevos desde el último entrenamiento.",
-        3: "Se entrenó una nueva versión, pero no mejora al modelo vigente. Se mantiene el actual."
-    }
-
-    if proceso.returncode not in mensajes:
-
-        return jsonify({
-            "ok": False,
-            "mensaje": "Error durante el reentrenamiento.",
-            "detalle": proceso.stderr[-2000:]
+            "mensaje": resultado["mensaje"],
+            "detalle": resultado["detalle"]
         }), 500
-
-    historial = (
-        json.loads(
-            RUTA_HISTORIAL_ML.read_text(
-                encoding="utf-8"
-            )
-        )
-        if RUTA_HISTORIAL_ML.exists()
-        else []
-    )
 
     return jsonify({
         "ok": True,
-        "resultado": {
-            0: "PROMOVIDO",
-            2: "SIN_DATOS_NUEVOS",
-            3: "NO_PROMOVIDO"
-        }[proceso.returncode],
-        "mensaje": mensajes[proceso.returncode],
-        "ultima_version": (
-            historial[-1]
-            if historial and proceso.returncode != 2
-            else None
-        )
+        "resultado": resultado["resultado"],
+        "mensaje": resultado["mensaje"]
     })

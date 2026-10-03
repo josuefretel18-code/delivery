@@ -13,5 +13,20 @@
         "f1": 0.610233174936457,
         "roc_auc": 0.7483436922542143,
         "promovido": true
+    },
+    {
+        "version": "v3.0",
+        "fecha_entrenamiento_utc": "2026-10-03T16:04:41.553972+00:00",
+        "modelo": "Random Forest",
+        "registros_totales": 176102,
+        "registros_externos": 176097,
+        "registros_reales": 5,
+        "f1_cv": 0.6062067570489373,
+        "accuracy": 0.698588910025269,
+        "precision": 0.592566118656183,
+        "recall": 0.6277449644101166,
+        "f1": 0.6096484777173113,
+        "roc_auc": 0.7483014400057455,
+        "promovido": false
     }
 ]

@@ -3,7 +3,7 @@
     "descripcion_externa": "Entregas reales de DoorDash (oct. 2014 - feb. 2015), con ruido anadido por DoorDash para anonimizar.",
     "doordash_filas_originales": 197428,
     "doordash_filas_limpias": 176097,
-    "kimbos_reales": 4,
+    "kimbos_reales": 6,
     "limpieza": "Sin nulos en tiempos/carga; conteos no negativos; al menos 1 repartidor en turno y 1 pedido pendiente; duracion real entre 10 y 180 min; ruta > 0; maximo 30 items.",
     "zona_horaria_doordash": "America/Los_Angeles",
     "preparacion_tipica_min": 29.93,

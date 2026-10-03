@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -91,7 +92,7 @@ RANDOM_STATE = 42
 
 # Procesos en paralelo. Con -1 se usa un proceso por nucleo y,
 # con ~180 mil registros, puede agotar la memoria del equipo.
-N_JOBS = 2
+N_JOBS = int(os.getenv("ML_N_JOBS", "2"))
 
 # Columnas de entrada y objetivo: ver ml/variables.py
 
