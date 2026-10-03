@@ -5,6 +5,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from db import probar_conexion
+from backend.decorators import roles_required
 from backend.auth import auth_bp
 from backend.routes.pedidos import pedidos_bp
 from backend.routes.sedes import sedes_bp
@@ -48,7 +49,9 @@ def health():
     })
 
 
+# Muestra datos internos de la BD: solo para ADMIN.
 @app.get("/api/database")
+@roles_required("ADMIN")
 def database():
     try:
         datos = probar_conexion()

@@ -257,7 +257,8 @@ docs/Documento_traspaso_Kimbos_ML.md
 | PATCH | `/api/pedidos/<id>/estado` | ADMIN, OPERADOR (ENTREGADO → reentrenamiento) |
 | GET | `/api/pedidos/ml/resumen` | ADMIN, OPERADOR |
 | POST | `/api/pedidos/ml/reentrenar` | ADMIN |
-| GET | `/api/health`, `/api/database` | público |
+| GET | `/api/health` | público |
+| GET | `/api/database` | ADMIN |
 
 ### Variables de entorno
 
@@ -332,8 +333,6 @@ Storage → bucket → `ml/metrics/matriz_confusion.png`, `metricas.json`,
 5. **Python 3.10** (Render y `.venv`): Google deja de dar soporte en sus
    librerías desde el 04/10/2026. El contenedor de ML ya usa 3.11; conviene
    migrar Render y el `.venv` a 3.11.
-6. `/api/database` es público y muestra el nombre de la BD y el usuario
-   (no la contraseña). Conviene protegerlo o eliminarlo.
 
 ---
 
@@ -341,9 +340,8 @@ Storage → bucket → `ml/metrics/matriz_confusion.png`, `metricas.json`,
 
 1. Acumular pedidos reales cambiando los estados en el momento real, para
    que la sección 2 del dashboard llegue a 30 evaluados.
-2. Proteger o eliminar `/api/database`.
-3. Migrar Render y `.venv` a Python 3.11.
-4. Opcional: pool de conexiones a PostgreSQL; rellenar nombre y teléfono del
+2. Migrar Render y `.venv` a Python 3.11.
+3. Opcional: pool de conexiones a PostgreSQL; rellenar nombre y teléfono del
    destinatario con los datos del cliente.
 
 ---
