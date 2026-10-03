@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request, g
 from db import get_connection
 from backend.decorators import token_required, roles_required
 from decimal import Decimal, ROUND_HALF_UP
+from backend.ml_service import predecir_retraso
 
 
 pedidos_bp = Blueprint(
@@ -538,6 +539,206 @@ def crear_pedido():
 
                 pedido_id = cur.fetchone()[0]
 
+                                # =========================================
+                # MACHINE LEARNING
+                # =========================================
+
+                # Contar pedidos reales que estaban activos
+                # antes de este nuevo pedido.
+
+                cur.execute("""
+                    SELECT COUNT(*)
+
+                    FROM pedidos p
+
+                    JOIN estados_pedido e
+                        ON e.id = p.estado_id
+
+                    WHERE p.id <> %s
+
+                      AND COALESCE(
+                          p.fuente_datos,
+                          'REAL'
+                      ) = 'REAL'
+
+                      AND e.codigo IN (
+                          'REGISTRADO',
+                          'PREPARANDO',
+                          'EN_RUTA'
+                      );
+                """, (
+                    pedido_id,
+                ))
+
+                pedidos_activos = (
+                    cur.fetchone()[0]
+                )
+
+
+                # Guardar cuántos pedidos estaban activos
+                # cuando se realizó este pedido.
+
+                cur.execute("""
+                    UPDATE pedidos
+
+                    SET pedidos_activos_momento = %s
+
+                    WHERE id = %s;
+                """, (
+                    pedidos_activos,
+                    pedido_id
+                ))
+
+
+                # Obtener la fecha exacta registrada
+                # por PostgreSQL.
+
+                cur.execute("""
+                    SELECT fecha_pedido
+
+                    FROM pedidos
+
+                    WHERE id = %s;
+                """, (
+                    pedido_id,
+                ))
+
+                fecha_pedido_ml = (
+                    cur.fetchone()[0]
+                )
+
+
+                # Ejecutar modelo ML.
+
+                prediccion_ml = predecir_retraso(
+
+                    distancia_km=
+                        distancia_km,
+
+                    duracion_estimada_min=
+                        duracion_estimada_min,
+
+                    tiempo_preparacion_estimado_min=
+                        tiempo_preparacion,
+
+                    cantidad_items=
+                        cantidad_items,
+
+                    pedidos_activos=
+                        pedidos_activos,
+
+                    fecha_pedido=
+                        fecha_pedido_ml
+                )
+
+
+                variables_ml = (
+                    prediccion_ml[
+                        "variables"
+                    ]
+                )
+
+
+                # Guardar la predicción y las variables
+                # utilizadas por el modelo.
+
+                cur.execute("""
+                    INSERT INTO predicciones_ml (
+
+                        pedido_id,
+
+                        modelo_version,
+                        clase_predicha,
+                        probabilidad_retraso,
+
+                        distancia_km,
+                        duracion_estimada_min,
+                        tiempo_preparacion_estimado_min,
+                        cantidad_items,
+
+                        hora_pedido,
+                        dia_semana,
+                        hora_pico,
+                        fin_semana,
+
+                        pedidos_activos,
+
+                        zona_origen,
+                        zona_destino
+
+                    )
+                    VALUES (
+
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+
+                        %s,
+                        %s
+                    );
+                """, (
+
+                    pedido_id,
+
+                    prediccion_ml[
+                        "modelo_version"
+                    ],
+
+                    prediccion_ml[
+                        "clase_predicha"
+                    ],
+
+                    prediccion_ml[
+                        "probabilidad_retraso"
+                    ],
+
+                    distancia_km,
+
+                    duracion_estimada_min,
+
+                    tiempo_preparacion,
+
+                    cantidad_items,
+
+                    variables_ml[
+                        "hora_pedido"
+                    ],
+
+                    variables_ml[
+                        "dia_semana"
+                    ],
+
+                    variables_ml[
+                        "hora_pico"
+                    ],
+
+                    variables_ml[
+                        "fin_semana"
+                    ],
+
+                    pedidos_activos,
+
+                    sede["nombre"],
+
+                    datos.get(
+                        "zona_destino"
+                    )
+                ))
+
 
                 # =========================================
                 # DETALLE DEL PEDIDO
@@ -662,7 +863,35 @@ def crear_pedido():
                     tiempo_preparacion,
 
                 "tiempo_estimado_total_min":
-                    tiempo_estimado_total
+                    tiempo_estimado_total,
+
+                "prediccion_ml": {
+
+                    "clase":
+                        prediccion_ml[
+                            "clase_predicha"
+                        ],
+
+                    "probabilidad_retraso":
+                        prediccion_ml[
+                            "probabilidad_retraso"
+                        ],
+
+                    "probabilidad_porcentaje":
+                        prediccion_ml[
+                            "probabilidad_porcentaje"
+                        ],
+
+                    "modelo":
+                        prediccion_ml[
+                            "modelo_nombre"
+                        ],
+
+                    "version":
+                        prediccion_ml[
+                            "modelo_version"
+                        ]
+                }
             }
 
         }), 201
@@ -923,12 +1152,42 @@ def listar_pedidos():
                     p.fecha_pedido,
                     p.fecha_entrega,
                     p.latitud_destino,
-                    p.longitud_destino
+                    p.longitud_destino,
+
+                    pm.modelo_version,
+                    pm.clase_predicha,
+                    pm.probabilidad_retraso,
+                    pm.fecha_prediccion,
+                    p.duracion_real_min,
+                    p.retraso
 
                 FROM pedidos p
 
                 JOIN estados_pedido e
                     ON e.id = p.estado_id
+
+                LEFT JOIN LATERAL (
+
+                SELECT
+                    modelo_version,
+                    clase_predicha,
+                    probabilidad_retraso,
+                    fecha_prediccion
+
+                FROM predicciones_ml
+
+                WHERE pedido_id = p.id
+
+                ORDER BY id DESC
+
+                LIMIT 1
+
+            ) pm ON TRUE
+
+                WHERE COALESCE(
+                    p.fuente_datos,
+                    'REAL'
+                ) = 'REAL'
 
                 ORDER BY p.fecha_pedido DESC;
             """)
@@ -1044,6 +1303,59 @@ def listar_pedidos():
                         if fila[20] is not None
                         else None
                     ),
+
+                    "prediccion_ml": (
+                        {
+                            "version": fila[21],
+
+                            "clase": fila[22],
+
+                            "probabilidad_retraso": (
+                                float(fila[23])
+                                if fila[23] is not None
+                                else None
+                            ),
+
+                            "probabilidad_porcentaje": (
+                                round(
+                                    float(fila[23]) * 100,
+                                    2
+                                )
+                                if fila[23] is not None
+                                else None
+                            ),
+
+                            "fecha_prediccion": (
+                                fila[24].isoformat()
+                                if fila[24]
+                                else None
+                            )
+                        }
+
+                        if fila[22] is not None
+
+                        else None
+                    ),
+                    "resultado_real": (
+                    {
+                        "duracion_real_min":
+                            fila[25],
+
+                        "retraso":
+                            fila[26],
+
+                        "clase": (
+                            "RETRASADO"
+                            if fila[26]
+                            else "A_TIEMPO"
+                        )
+                    }
+
+                    if fila[25] is not None
+                    and fila[26] is not None
+
+                    else None
+                ),
 
                     "productos": productos
                 })
@@ -1177,9 +1489,41 @@ def actualizar_estado_pedido(pedido_id):
 
                 cur.execute("""
                     UPDATE pedidos
+
                     SET
                         estado_id = %s,
-                        fecha_entrega = CURRENT_TIMESTAMP
+
+                        fecha_entrega =
+                            CURRENT_TIMESTAMP,
+
+                        duracion_real_min =
+                            CEIL(
+                                EXTRACT(
+                                    EPOCH FROM (
+                                        CURRENT_TIMESTAMP
+                                        - fecha_pedido
+                                    )
+                                ) / 60.0
+                            )::integer,
+
+                        retraso = (
+                            EXTRACT(
+                                EPOCH FROM (
+                                    CURRENT_TIMESTAMP
+                                    - fecha_pedido
+                                )
+                            ) / 60.0
+                            >
+                            (
+                                COALESCE(
+                                    tiempo_estimado_total_min,
+                                    duracion_estimada_min,
+                                    0
+                                )
+                                + 5
+                            )
+                        )
+
                     WHERE id = %s;
                 """, (
                     nuevo_estado_id,

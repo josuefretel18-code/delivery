@@ -357,3 +357,132 @@ body {
     color: var(--naranja);
     text-decoration: underline;
 }
+/* ============================================
+   PREDICCION MACHINE LEARNING
+============================================= */
+
+.prediccion-ml-admin {
+    margin-bottom: 16px;
+
+    padding: 14px 16px;
+
+    border-radius: 14px;
+
+    border: 1px solid #e5e5e5;
+}
+
+.prediccion-ml-tiempo {
+    background: #eef9f3;
+    border-color: #cdebd9;
+}
+
+.prediccion-ml-riesgo {
+    background: #fff3eb;
+    border-color: #ffd5b8;
+}
+
+.prediccion-ml-titulo {
+    font-size: 0.8rem;
+
+    color: #777;
+
+    font-weight: 600;
+}
+
+.prediccion-ml-clase {
+    margin-top: 2px;
+
+    font-weight: 800;
+}
+
+.prediccion-ml-tiempo
+.prediccion-ml-clase {
+    color: #17884f;
+}
+
+.prediccion-ml-riesgo
+.prediccion-ml-clase {
+    color: #d75b00;
+}
+
+.prediccion-ml-porcentaje {
+    font-size: 1.35rem;
+
+    font-weight: 900;
+}
+
+.prediccion-ml-detalle {
+    margin-top: 7px;
+
+    color: #777;
+
+    font-size: 0.78rem;
+}
+/* ============================================
+   RESULTADO REAL DEL PEDIDO
+============================================= */
+
+.resultado-real-admin {
+    margin-bottom: 16px;
+
+    padding: 14px 16px;
+
+    border-radius: 14px;
+
+    border: 1px solid #e5e5e5;
+}
+
+.resultado-real-retrasado {
+    background: #fff4f4;
+    border-color: #f2cccc;
+}
+
+.resultado-real-tiempo {
+    background: #eef9f3;
+    border-color: #cdebd9;
+}
+
+.resultado-real-titulo {
+    color: #777;
+
+    font-size: 0.8rem;
+
+    font-weight: 600;
+}
+
+.resultado-real-clase {
+    margin-top: 2px;
+
+    font-weight: 800;
+}
+
+.resultado-real-retrasado
+.resultado-real-clase {
+    color: #b82f2f;
+}
+
+.resultado-real-tiempo
+.resultado-real-clase {
+    color: #17884f;
+}
+
+.resultado-real-minutos {
+    font-size: 1.35rem;
+
+    font-weight: 900;
+}
+
+.resultado-comparacion {
+    margin-top: 8px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid
+        rgba(0, 0, 0, 0.08);
+
+    color: #666;
+
+    font-size: 0.8rem;
+
+    font-weight: 600;
+}

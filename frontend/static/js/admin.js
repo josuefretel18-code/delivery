@@ -704,6 +704,159 @@ function renderizarPedidosAdmin(pedidos) {
                         min
 
                     </div>
+                    ${
+                        pedido.prediccion_ml
+                            ? `
+                                <div
+                                    class="
+                                        prediccion-ml-admin
+                                        ${
+                                            pedido.prediccion_ml.clase === "RETRASADO"
+                                                ? "prediccion-ml-riesgo"
+                                                : "prediccion-ml-tiempo"
+                                        }
+                                    "
+                                >
+
+                                    <div
+                                        class="
+                                            d-flex
+                                            justify-content-between
+                                            align-items-center
+                                            gap-3
+                                        "
+                                    >
+
+                                        <div>
+
+                                            <div class="prediccion-ml-titulo">
+                                                🤖 Predicción ML
+                                            </div>
+
+                                            <div class="prediccion-ml-clase">
+
+                                                ${
+                                                    pedido.prediccion_ml.clase === "RETRASADO"
+                                                        ? "Posible retraso"
+                                                        : "A tiempo"
+                                                }
+
+                                            </div>
+
+                                        </div>
+
+
+                                        <div class="prediccion-ml-porcentaje">
+
+                                            ${
+                                                Number(
+                                                    pedido.prediccion_ml
+                                                        .probabilidad_porcentaje
+                                                ).toFixed(2)
+                                            }%
+
+                                        </div>
+
+                                    </div>
+
+
+                                    <div class="prediccion-ml-detalle">
+
+                                        Riesgo estimado de retraso
+
+                                        ·
+
+                                        Modelo
+                                        ${
+                                            escaparHtmlAdmin(
+                                                pedido.prediccion_ml.version || "--"
+                                            )
+                                        }
+
+                                    </div>
+
+                                </div>
+                            `
+                            : ""
+                    }
+                    ${
+                        pedido.resultado_real
+                            ? `
+                                <div
+                                    class="
+                                        resultado-real-admin
+                                        ${
+                                            pedido.resultado_real.clase === "RETRASADO"
+                                                ? "resultado-real-retrasado"
+                                                : "resultado-real-tiempo"
+                                        }
+                                    "
+                                >
+
+                                    <div
+                                        class="
+                                            d-flex
+                                            justify-content-between
+                                            align-items-center
+                                            gap-3
+                                        "
+                                    >
+
+                                        <div>
+
+                                            <div class="resultado-real-titulo">
+                                                📊 Resultado real
+                                            </div>
+
+                                            <div class="resultado-real-clase">
+
+                                                ${
+                                                    pedido.resultado_real.clase === "RETRASADO"
+                                                        ? "Retrasado"
+                                                        : "A tiempo"
+                                                }
+
+                                            </div>
+
+                                        </div>
+
+
+                                        <div class="resultado-real-minutos">
+
+                                            ${
+                                                pedido.resultado_real
+                                                    .duracion_real_min
+                                            }
+                                            min
+
+                                        </div>
+
+                                    </div>
+
+
+                                    ${
+                                        pedido.prediccion_ml
+                                            ? `
+                                                <div class="resultado-comparacion">
+
+                                                    ${
+                                                        pedido.prediccion_ml.clase ===
+                                                        pedido.resultado_real.clase
+
+                                                            ? "✓ La predicción coincidió con el resultado real"
+
+                                                            : "✕ La predicción no coincidió con el resultado real"
+                                                    }
+
+                                                </div>
+                                            `
+                                            : ""
+                                    }
+
+                                </div>
+                            `
+                            : ""
+                    }
 
 
                     ${

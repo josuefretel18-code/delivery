@@ -3,7 +3,5 @@
 __pycache__/
 *.pyc
 
-ml/models/*.joblib
-ml/metrics/*.png
 
 .vscode/
