@@ -120,7 +120,19 @@ def obtener_datos_ml():
 
         respuesta.raise_for_status()
 
-        return respuesta.json()
+        datos = respuesta.json()
+
+        # El reentrenamiento automatico es configuracion de este
+        # servidor (lo dispara al entregar un pedido), no de la API.
+        from backend.ml_reentrenamiento import (
+            reentrenamiento_automatico_activo
+        )
+
+        datos.setdefault("estado", {})["automatico"] = (
+            reentrenamiento_automatico_activo()
+        )
+
+        return datos
 
     from backend.ml_reentrenamiento import leer_estado
 
