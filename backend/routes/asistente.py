@@ -5,7 +5,6 @@ from backend.llm_agente import (
     LimiteAlcanzado,
     disponibilidad,
     responder,
-    resumen_consumo,
 )
 from backend.llm_herramientas import HERRAMIENTAS_ADMIN, HERRAMIENTAS_CLIENTE
 
@@ -42,7 +41,6 @@ Puedes:
 - Revisar pedidos activos ordenados por riesgo de retraso (pedidos_activos) y el detalle de uno por codigo (detalle_pedido).
 - Simular con el modelo de Machine Learning si un pedido llegaria tarde (simular_pedido).
 - Informar el modelo ML vigente y sus metricas (estado_modelo).
-- Informar el consumo del LLM frente al presupuesto mensual (consumo_llm).
 
 Reglas:
 - Responde en espanol, directo y breve: maximo 6 frases o una lista corta. Destaca los pedidos con mayor riesgo.
@@ -110,15 +108,3 @@ def estado_asistente():
 
     return jsonify({"ok": True, "asistente": asistente, **estado})
 
-
-@asistente_bp.get("/consumo")
-@roles_required("ADMIN", "OPERADOR")
-def consumo_asistente():
-
-    try:
-        return jsonify({"ok": True, **resumen_consumo()})
-    except Exception as error:
-        return jsonify({
-            "ok": False,
-            "mensaje": f"No se pudo leer el consumo: {error}"
-        }), 500

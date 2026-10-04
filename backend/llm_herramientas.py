@@ -431,20 +431,6 @@ def estado_modelo(usuario):
     }
 
 
-def consumo_llm(usuario):
-
-    from backend.llm_agente import resumen_consumo
-
-    resumen = resumen_consumo()
-
-    return {
-        "gasto_mes_usd": resumen["gasto_mes_usd"],
-        "presupuesto_usd": resumen["presupuesto_usd"],
-        "mensajes_mes": resumen["mensajes_mes"],
-        "por_asistente": resumen["por_asistente"],
-    }
-
-
 HERRAMIENTAS_ADMIN = {
     "pedidos_activos": (
         _funcion(
@@ -489,12 +475,5 @@ HERRAMIENTAS_ADMIN = {
             "ROC-AUC) y resultado del ultimo reentrenamiento.",
         ),
         estado_modelo,
-    ),
-    "consumo_llm": (
-        _funcion(
-            "consumo_llm",
-            "Gasto del mes en el LLM frente al presupuesto, por asistente.",
-        ),
-        consumo_llm,
     ),
 }

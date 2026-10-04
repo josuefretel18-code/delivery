@@ -206,15 +206,6 @@
         🤖 Dashboard ML
     </button>
 
-    <button
-        id="btnConsumoLLM"
-        class="btn btn-outline-dark"
-        type="button"
-        data-bs-toggle="modal"
-        data-bs-target="#modalConsumoLLM"
-    >
-        💬 Consumo LLM
-    </button>
 
     <button
         id="btnActualizarPedidos"
@@ -739,57 +730,14 @@
 </div>
 
 
-<div
-    class="modal fade"
-    id="modalConsumoLLM"
-    tabindex="-1"
-    aria-hidden="true"
->
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-
-        <div class="modal-content modal-productos-admin">
-
-            <div class="modal-header">
-
-                <div>
-                    <h4 class="fw-bold mb-1">
-                        Consumo del LLM
-                    </h4>
-
-                    <p class="text-secondary mb-0">
-                        Asistentes con IA (OpenAI): gasto del mes frente al presupuesto y registro de cada consulta.
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    class="btn-close"
-                    data-bs-dismiss="modal"
-                    aria-label="Cerrar"
-                ></button>
-
-            </div>
-
-            <div class="modal-body">
-                <div id="contenidoConsumoLLM">
-                    <p class="text-secondary">Cargando...</p>
-                </div>
-            </div>
-
-        </div>
-
-    </div>
-</div>
-
-
 <!-- Asistente con LLM para administradores y operadores (solo lectura) -->
 <div
     id="kimbosAsistente"
     data-endpoint="/api/asistente/admin"
     data-token="kimbos_admin_token"
     data-titulo="Asistente de operaciones"
-    data-bienvenida="Hola. Puedo revisar pedidos activos y su riesgo de retraso, el detalle de un pedido, simular una predicción del modelo ML o informar el consumo del LLM."
-    data-sugerencias="¿Qué pedidos tienen más riesgo de retraso?|¿Cómo está el modelo ML?|¿Cuánto llevamos gastado en el LLM?"
+    data-bienvenida="Hola. Puedo revisar pedidos activos y su riesgo de retraso, el detalle de un pedido o simular una predicción del modelo ML."
+    data-sugerencias="¿Qué pedidos tienen más riesgo de retraso?|¿Cómo está el modelo ML?|Simula un pedido: 4 km, 15 min de ruta, 3 productos y 15 min de preparación"
 ></div>
 
 
@@ -800,11 +748,6 @@
 
     <script
         src="{{ url_for('static', filename='js/admin.js') }}"
-    >
-    </script>
-
-    <script
-        src="{{ url_for('static', filename='js/llm_consumo.js') }}"
     >
     </script>
 
