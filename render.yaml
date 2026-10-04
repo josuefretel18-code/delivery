@@ -39,6 +39,23 @@ services:
       - key: REENTRENAMIENTO_AUTOMATICO
         value: "true"
 
+      # Asistentes con LLM (OpenAI). La clave se ingresa en el panel de
+      # Render. Sin OPENAI_API_KEY los asistentes quedan apagados.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_MODELO
+        value: gpt-5-mini
+      # Presupuesto mensual (USD) y cortes: primero se apaga el
+      # asistente del admin y despues el del cliente.
+      - key: LLM_PRESUPUESTO_USD
+        value: "10"
+      - key: LLM_CORTE_ADMIN_USD
+        value: "7"
+      - key: LLM_CORTE_CLIENTE_USD
+        value: "8"
+      - key: LLM_MENSAJES_DIARIOS_CLIENTE
+        value: "15"
+
       # Limita los hilos de las librerias numericas (menos memoria).
       - key: OMP_NUM_THREADS
         value: "1"

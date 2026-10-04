@@ -706,10 +706,18 @@ function renderizarDashboardML(datos) {
 
     } else {
 
+        // Sin metricas: la API de ML no respondio o aun no hay modelo.
+        const errorApi =
+            datos.reentrenamiento?.resultado === "ERROR"
+                ? datos.reentrenamiento.mensaje
+                : null;
+
         html += `
             <div class="alert alert-warning">
-                No se encontró ml/metrics/metricas.json.
-                Ejecuta el entrenamiento del modelo.
+                ${errorApi
+                    ? escaparHtmlAdmin(errorApi) +
+                      ". Revisa ML_API_URL y ML_API_KEY."
+                    : "No se encontró ml/metrics/metricas.json. Ejecuta el entrenamiento del modelo."}
             </div>
         `;
 

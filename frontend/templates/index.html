@@ -19,6 +19,11 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/cliente.css') }}"
     >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/asistente.css') }}"
+    >
 </head>
 
 <body>
@@ -1194,6 +1199,21 @@
     <script
         async
         src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key }}&v=weekly&callback=initGoogleMaps"
+    >
+    </script>
+
+    <!-- Asistente con LLM (solo clientes con sesion iniciada) -->
+    <div
+        id="kimbosAsistente"
+        data-endpoint="/api/asistente/cliente"
+        data-token="kimbos_token"
+        data-titulo="Asistente Kimbos"
+        data-bienvenida="¡Hola! Te ayudo a elegir productos, ver el estado de tus pedidos o el costo del delivery."
+        data-sugerencias="¿Qué me recomiendas por menos de S/ 20?|¿Cómo va mi pedido?|¿Cuánto cuesta el delivery?"
+    ></div>
+
+    <script
+        src="{{ url_for('static', filename='js/asistente.js') }}"
     >
     </script>
 
