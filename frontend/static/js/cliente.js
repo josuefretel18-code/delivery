@@ -37,6 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
     configurarContinuarPedido();
     configurarResumenPedido();
     configurarMisPedidos();
+    configurarCerrarSesion();
 
 });
 
@@ -1010,6 +1011,11 @@ function actualizarInterfazUsuario() {
             "btnMisPedidos"
         );
 
+    const botonCerrar =
+        document.getElementById(
+            "btnCerrarSesion"
+        );
+
 
     if (!usuarioActual) {
 
@@ -1027,6 +1033,10 @@ function actualizarInterfazUsuario() {
         );
 
         botonPedidos.classList.add(
+            "d-none"
+        );
+
+        botonCerrar.classList.add(
             "d-none"
         );
 
@@ -1055,6 +1065,40 @@ function actualizarInterfazUsuario() {
 
     botonPedidos.classList.remove(
         "d-none"
+    );
+
+    botonCerrar.classList.remove(
+        "d-none"
+    );
+
+}
+
+
+/* ========================================================
+   CERRAR SESIÓN
+======================================================== */
+
+function configurarCerrarSesion() {
+
+    const boton =
+        document.getElementById(
+            "btnCerrarSesion"
+        );
+
+    boton.addEventListener(
+        "click",
+        () => {
+
+            localStorage.removeItem(
+                "kimbos_token"
+            );
+
+            usuarioActual = null;
+
+            // Recargar limpia los datos del usuario anterior
+            // (pedidos y conversación del asistente).
+            window.location.reload();
+        }
     );
 
 }
