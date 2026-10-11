@@ -100,6 +100,7 @@ AGENTE_ANALISTA = {
 
 Tu tarea: identificar la causa principal del riesgo.
 - Variables del modelo: carga_repartidor (pedidos activos / repartidores; la mas influyente), duracion_estimada_min (ruta), cantidad_items, hora_pico (12-14 y 19-21), fin_semana.
+- espera_repartidor_min: minutos que el pedido esperara a un repartidor libre (ya sumados al tiempo estimado). Si es mayor a 0, todos los repartidores estan ocupados.
 - Puedes consultar pedidos_activos para ver la carga real ahora, y simular_pedido para comparar escenarios. Usa como maximo una herramienta.
 - Nivel segun la probabilidad del modelo: ALTO desde 65 %, MEDIO de 40 a 64 %, BAJO menos de 40 %.
 - Escribe los factores en lenguaje simple con su valor, p. ej. "Ruta de 14 min" o "2.5 pedidos por repartidor".
@@ -226,6 +227,7 @@ def _datos_pedido(pedido_id):
                     p.tiempo_preparacion_estimado_min,
                     p.tiempo_estimado_total_min,
                     p.cantidad_items,
+                    COALESCE(p.espera_repartidor_min, 0),
                     pm.clase_predicha,
                     pm.probabilidad_retraso,
                     pm.modelo_version,
@@ -259,21 +261,22 @@ def _datos_pedido(pedido_id):
         "preparacion_min": fila[3],
         "tiempo_estimado_total_min": fila[4],
         "cantidad_items": fila[5],
+        "espera_repartidor_min": fila[6],
         "prediccion_ml": {
-            "clase": fila[6],
-            "probabilidad_retraso_pct": round(float(fila[7]) * 100, 1),
-            "modelo": fila[8],
+            "clase": fila[7],
+            "probabilidad_retraso_pct": round(float(fila[8]) * 100, 1),
+            "modelo": fila[9],
         },
         "variables_modelo": {
-            "hora_pedido": fila[9],
-            "dia_semana": fila[10],
-            "hora_pico": bool(fila[11]),
-            "fin_semana": bool(fila[12]),
-            "pedidos_activos": fila[13],
-            "repartidores_disponibles": fila[14],
-            "carga_repartidor": float(fila[15]) if fila[15] is not None else None,
+            "hora_pedido": fila[10],
+            "dia_semana": fila[11],
+            "hora_pico": bool(fila[12]),
+            "fin_semana": bool(fila[13]),
+            "pedidos_activos": fila[14],
+            "repartidores_disponibles": fila[15],
+            "carga_repartidor": float(fila[16]) if fila[16] is not None else None,
         },
-        "_probabilidad": float(fila[7]),
+        "_probabilidad": float(fila[8]),
     }
 
 

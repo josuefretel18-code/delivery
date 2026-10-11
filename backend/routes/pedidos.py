@@ -11,7 +11,10 @@ from backend.agentes_automaticos import (
     alertas_por_pedido,
     disparar_alerta_si_riesgo
 )
-from backend.repartidores import repartidores_por_pedido
+from backend.repartidores import (
+    estimar_espera_repartidor,
+    repartidores_por_pedido
+)
 from backend.ml_reentrenamiento import (
     iniciar_reentrenamiento_automatico,
     reentrenamiento_automatico_activo,
@@ -413,8 +416,15 @@ def crear_pedido():
                 )
 
 
+                # Si todos los repartidores estan en ruta, el pedido
+                # espera a que uno vuelva: se suma al tiempo prometido.
+                espera_repartidor = estimar_espera_repartidor(
+                    tiempo_preparacion
+                )["espera_min"]
+
                 tiempo_estimado_total = (
                     tiempo_preparacion +
+                    espera_repartidor +
                     duracion_estimada_min
                 )
 
@@ -460,6 +470,7 @@ def crear_pedido():
 
                         tiempo_preparacion_estimado_min,
                         tiempo_estimado_total_min,
+                        espera_repartidor_min,
 
                         metodo_pago,
                         indicaciones_entrega,
@@ -487,7 +498,7 @@ def crear_pedido():
 
                         %s,
 
-                        %s, %s,
+                        %s, %s, %s,
 
                         %s, %s,
 
@@ -532,6 +543,7 @@ def crear_pedido():
 
                     tiempo_preparacion,
                     tiempo_estimado_total,
+                    espera_repartidor,
 
                     datos.get(
                         "metodo_pago"
@@ -910,6 +922,9 @@ def crear_pedido():
                 "tiempo_estimado_total_min":
                     tiempo_estimado_total,
 
+                "espera_repartidor_min":
+                    espera_repartidor,
+
                 "prediccion_ml": (
                     {
 
@@ -955,6 +970,48 @@ def crear_pedido():
             "mensaje": "No se pudo registrar el pedido",
             "detalle": str(error)
         }), 500
+
+
+# =========================================================
+# ESPERA DE REPARTIDOR
+# =========================================================
+
+def esperas_por_pedido(pedido_ids):
+
+    if not pedido_ids:
+        return {}
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, espera_repartidor_min
+                    FROM pedidos
+                    WHERE id = ANY(%s);
+                """, (list(pedido_ids),))
+
+                return {fila[0]: fila[1] or 0 for fila in cur.fetchall()}
+
+    except Exception:
+        # Antes de la migracion la columna puede no existir.
+        return {}
+
+
+@pedidos_bp.get("/espera-estimada")
+@token_required
+def espera_estimada():
+    """Vista previa para el resumen del pedido: cuanto esperaria a un
+    repartidor libre con la preparacion indicada."""
+
+    try:
+        preparacion = max(int(request.args.get("preparacion", 0)), 0)
+    except ValueError:
+        preparacion = 0
+
+    return jsonify({
+        "ok": True,
+        **estimar_espera_repartidor(preparacion)
+    })
 
 
 # =========================================================
@@ -1165,8 +1222,13 @@ def mis_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    esperas = esperas_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["aviso"] = avisos.get(pedido["id"])
+        pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
 
         repartidor = repartidores.get(pedido["id"])
 
@@ -1465,9 +1527,14 @@ def listar_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    esperas = esperas_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["alerta"] = alertas.get(pedido["id"])
         pedido["repartidor"] = repartidores.get(pedido["id"])
+        pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
 
     return jsonify({
         "ok": True,

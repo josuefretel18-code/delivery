@@ -6,8 +6,12 @@ Repartidores: turno, carga y sugerencia de asignacion.
   menos pedidos activos; el admin confirma o elige otro.
 - Los repartidores en turno alimentan la variable carga_repartidor del
   modelo ML (si no hay ninguno en turno se usa REPARTIDORES_DISPONIBLES).
+- Si todos los repartidores estan ocupados, se estima cuanto esperaria
+  un pedido nuevo a que uno vuelva (se suma al tiempo prometido).
 """
 
+import heapq
+import math
 import os
 
 from db import get_connection
@@ -25,6 +29,22 @@ def asegurar_columna_turno():
 
     if _COLUMNA_LISTA["ok"]:
         return
+
+    # Primero solo se consulta (sin bloquear tablas): esta funcion se
+    # llama mientras se crea un pedido y un ALTER TABLE pedidos dentro
+    # de esa operacion quedaria esperando a la propia transaccion.
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE (table_name = 'repartidores' AND column_name = 'en_turno')
+                   OR (table_name = 'pedidos' AND column_name = 'espera_repartidor_min');
+            """)
+
+            if cur.fetchone()[0] == 2:
+                _COLUMNA_LISTA["ok"] = True
+                return
 
     ruta = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -182,3 +202,107 @@ def repartidores_por_pedido(pedido_ids):
         }
         for fila in filas
     }
+
+
+
+# Espera maxima que se suma al tiempo prometido (minutos)
+ESPERA_MAXIMA_MIN = 90
+
+
+def estimar_espera_repartidor(tiempo_preparacion_min):
+    """
+    Minutos que un pedido nuevo esperaria a un repartidor libre cuando
+    la comida ya esta lista.
+
+    1. Cada repartidor en turno queda libre ya (sin pedidos) o al volver
+       a la tienda: ida + vuelta (2 x ruta) menos lo que ya lleva fuera.
+    2. Los pedidos que esperan antes que este (sin repartidor) toman
+       primero los repartidores que se van liberando, en orden.
+    3. Espera = cuando queda libre un repartidor para este pedido menos
+       su tiempo de preparacion (nunca negativa).
+
+    Sin repartidores registrados en turno devuelve 0 (comportamiento
+    anterior: preparacion + ruta).
+    """
+
+    resultado = {
+        "espera_min": 0,
+        "repartidores_en_turno": 0,
+        "repartidores_libres": 0,
+        "pedidos_en_espera": 0,
+    }
+
+    try:
+        asegurar_columna_turno()
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+
+                # Minutos hasta que cada repartidor en turno vuelve libre
+                cur.execute("""
+                    SELECT
+                        r.id,
+                        COALESCE(SUM(
+                            GREATEST(
+                                2 * COALESCE(p.duracion_estimada_min, 0)
+                                - EXTRACT(EPOCH FROM (
+                                    NOW() - COALESCE(p.fecha_recojo, NOW())
+                                )) / 60.0,
+                                0
+                            )
+                        ) FILTER (WHERE e.codigo = ANY(%s)), 0)
+                    FROM repartidores r
+                    LEFT JOIN pedidos p
+                        ON p.repartidor_id = r.id
+                    LEFT JOIN estados_pedido e
+                        ON e.id = p.estado_id
+                    WHERE r.activo = TRUE
+                      AND r.en_turno = TRUE
+                    GROUP BY r.id;
+                """, (list(ESTADOS_ACTIVOS),))
+
+                libres_en = [float(fila[1]) for fila in cur.fetchall()]
+
+                if not libres_en:
+                    return resultado
+
+                # Pedidos que esperan antes que este (aun sin repartidor)
+                cur.execute("""
+                    SELECT
+                        GREATEST(
+                            COALESCE(p.tiempo_preparacion_estimado_min, 0)
+                            - EXTRACT(EPOCH FROM (NOW() - p.fecha_pedido)) / 60.0,
+                            0
+                        ),
+                        COALESCE(p.duracion_estimada_min, 0)
+                    FROM pedidos p
+                    JOIN estados_pedido e
+                        ON e.id = p.estado_id
+                    WHERE p.repartidor_id IS NULL
+                      AND e.codigo IN ('REGISTRADO', 'PREPARANDO')
+                      AND COALESCE(p.fuente_datos, 'REAL') = 'REAL'
+                    ORDER BY p.fecha_pedido;
+                """)
+
+                en_espera = cur.fetchall()
+
+    except Exception as error:
+        print(f"[REPARTIDORES] Sin estimacion de espera: {error}", flush=True)
+        return resultado
+
+    resultado["repartidores_en_turno"] = len(libres_en)
+    resultado["repartidores_libres"] = sum(1 for t in libres_en if t <= 0)
+    resultado["pedidos_en_espera"] = len(en_espera)
+
+    heapq.heapify(libres_en)
+
+    for listo_en, ruta in en_espera:
+        libre = heapq.heappop(libres_en)
+        salida = max(libre, float(listo_en))
+        heapq.heappush(libres_en, salida + 2 * float(ruta))
+
+    espera = max(libres_en[0] - float(tiempo_preparacion_min or 0), 0)
+
+    resultado["espera_min"] = min(math.ceil(espera), ESPERA_MAXIMA_MIN)
+
+    return resultado

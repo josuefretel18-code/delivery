@@ -1442,6 +1442,12 @@ function renderizarPedidosAdmin(pedidos) {
                         ${pedido.duracion_estimada_min ?? "--"}
                         min
 
+                        ${
+                            pedido.espera_repartidor_min
+                                ? `· 🛵 Espera repartidor: ${pedido.espera_repartidor_min} min`
+                                : ""
+                        }
+
                     </div>
                     ${
                         pedido.prediccion_ml

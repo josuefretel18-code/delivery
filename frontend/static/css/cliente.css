@@ -689,3 +689,16 @@ body {
     background: #f7f7f7;
     font-size: 0.9rem;
 }
+
+
+/* Espera de repartidor en el resumen del pedido */
+
+.aviso-espera {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #fff8f2;
+    border: 1px solid #ffd2b0;
+    color: #6b3a00;
+    font-size: 0.88rem;
+}

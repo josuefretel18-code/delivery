@@ -2095,6 +2095,12 @@ function abrirResumenPedido() {
         `${tiempoPreparacion} min`;
 
 
+    mostrarEsperaRepartidor(
+        tiempoPreparacion,
+        datosRuta.duracion_estimada_min
+    );
+
+
     /* =============================================
        TOTALES PREVIOS
     ============================================= */
@@ -2969,4 +2975,63 @@ function formatearFechaPedido(
         }
     );
 
+}
+
+
+/* ========================================================
+   ESPERA DE REPARTIDOR
+   Si todos los repartidores están en ruta, el resumen avisa
+   cuánto esperaría el pedido a que uno vuelva.
+======================================================== */
+
+async function mostrarEsperaRepartidor(
+    tiempoPreparacion,
+    tiempoRuta
+) {
+
+    const aviso =
+        document.getElementById(
+            "resumenEspera"
+        );
+
+    if (!aviso) {
+        return;
+    }
+
+    aviso.classList.add("d-none");
+
+    try {
+
+        const respuesta = await fetch(
+            `/api/pedidos/espera-estimada?preparacion=${Number(tiempoPreparacion) || 0}`,
+            {
+                headers: {
+                    "Authorization":
+                        `Bearer ${localStorage.getItem("kimbos_token")}`
+                }
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok || !datos.espera_min) {
+            return;
+        }
+
+        const total =
+            Number(tiempoPreparacion) +
+            Number(datos.espera_min) +
+            Number(tiempoRuta);
+
+        aviso.innerHTML = `
+            🛵 Nuestros repartidores están en ruta: tu pedido esperaría
+            <strong>~${datos.espera_min} min</strong> a que uno vuelva.
+            Tiempo total estimado: <strong>${total} min</strong>.
+        `;
+
+        aviso.classList.remove("d-none");
+
+    } catch (error) {
+        console.error(error);
+    }
 }

@@ -13,6 +13,7 @@ from backend.routes.catalogo import catalogo_bp
 from backend.routes.asistente import asistente_bp
 from backend.routes.automatizacion import automatizacion_bp
 from backend.routes.repartidores import repartidores_bp
+from backend.repartidores import asegurar_columna_turno
 
 
 load_dotenv()
@@ -33,6 +34,14 @@ app.register_blueprint(catalogo_bp)
 app.register_blueprint(asistente_bp)
 app.register_blueprint(automatizacion_bp)
 app.register_blueprint(repartidores_bp)
+
+
+# Columnas de repartidores (turno y espera): se aplican al arrancar, no
+# durante un pedido. Si la BD no responde, la app arranca igual.
+try:
+    asegurar_columna_turno()
+except Exception as error:
+    print(f"[REPARTIDORES] Migracion pendiente: {error}", flush=True)
 
 @app.get("/")
 def inicio():

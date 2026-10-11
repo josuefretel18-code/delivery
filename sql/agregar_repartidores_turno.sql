@@ -11,3 +11,8 @@
 
 ALTER TABLE repartidores
     ADD COLUMN IF NOT EXISTS en_turno BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Minutos que el pedido esperaria a un repartidor libre (todos en ruta).
+-- tiempo_estimado_total_min = preparacion + espera + ruta.
+ALTER TABLE pedidos
+    ADD COLUMN IF NOT EXISTS espera_repartidor_min INTEGER NOT NULL DEFAULT 0;
