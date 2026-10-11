@@ -2801,6 +2801,9 @@ function renderizarMisPedidos(
                     </div>
 
 
+                    ${construirAvisoAgentes(pedido)}
+
+
                     ${seguimiento}
 
                 </div>
@@ -2810,6 +2813,29 @@ function renderizarMisPedidos(
     );
 
 }
+/* Aviso del sistema multiagente (pedido con riesgo de retraso).
+   Solo mientras el pedido esta en curso. */
+function construirAvisoAgentes(
+    pedido
+) {
+
+    const enCurso =
+        pedido.estado.codigo !== "ENTREGADO" &&
+        pedido.estado.codigo !== "CANCELADO";
+
+    if (!pedido.aviso || !enCurso) {
+        return "";
+    }
+
+    return `
+        <div class="aviso-agentes">
+            <strong>⏱️ Aviso de Kimbos</strong>
+            <div>${escaparHtml(pedido.aviso.mensaje)}</div>
+        </div>
+    `;
+}
+
+
 function construirSeguimientoSimple(
     estadoInterno
 ) {

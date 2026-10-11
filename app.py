@@ -11,6 +11,7 @@ from backend.routes.pedidos import pedidos_bp
 from backend.routes.sedes import sedes_bp
 from backend.routes.catalogo import catalogo_bp
 from backend.routes.asistente import asistente_bp
+from backend.routes.automatizacion import automatizacion_bp
 
 
 load_dotenv()
@@ -29,6 +30,7 @@ app.register_blueprint(pedidos_bp)
 app.register_blueprint(sedes_bp)
 app.register_blueprint(catalogo_bp)
 app.register_blueprint(asistente_bp)
+app.register_blueprint(automatizacion_bp)
 
 @app.get("/")
 def inicio():

@@ -666,3 +666,15 @@ body {
 .estado-simple.actual .estado-texto strong {
     color: var(--kimbos-primary);
 }
+
+/* Aviso del sistema multiagente en Mis pedidos */
+
+.aviso-agentes {
+    margin: 12px 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fff8f2;
+    border: 1px solid #ffd2b0;
+    color: #6b3a00;
+    font-size: 0.9rem;
+}

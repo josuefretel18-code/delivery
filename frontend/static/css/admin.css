@@ -596,3 +596,47 @@ body {
     background: #fdecec;
     color: #a83232;
 }
+
+
+/* Sistema multiagente: alerta de pedido en riesgo */
+
+.alerta-agentes {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid #d8d4f5;
+    background: #f5f3ff;
+    font-size: 0.9rem;
+}
+
+.alerta-agentes.nivel-alto {
+    border-color: #f5c2c7;
+    background: #fff5f5;
+}
+
+.alerta-agentes.nivel-medio {
+    border-color: #ffe08a;
+    background: #fffbea;
+}
+
+.alerta-agentes-titulo {
+    font-weight: 700;
+}
+
+.alerta-agentes-nivel {
+    background: #171717;
+}
+
+.alerta-agentes-paso {
+    margin-top: 8px;
+}
+
+.alerta-agentes-paso ul {
+    padding-left: 18px;
+}
+
+.alerta-agentes-pie {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: #777;
+}

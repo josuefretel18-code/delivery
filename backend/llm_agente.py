@@ -60,6 +60,8 @@ def configuracion():
         "presupuesto_usd": _float_env("LLM_PRESUPUESTO_USD", 10),
         "corte_admin_usd": _float_env("LLM_CORTE_ADMIN_USD", 7),
         "corte_cliente_usd": _float_env("LLM_CORTE_CLIENTE_USD", 8),
+        # Agentes automaticos (alertas y reporte): se apagan con el admin.
+        "corte_automatizacion_usd": _float_env("LLM_CORTE_AUTOMATIZACION_USD", 7),
         "mensajes_diarios": {
             "CLIENTE": int(_float_env("LLM_MENSAJES_DIARIOS_CLIENTE", 15)),
             "ADMIN": int(_float_env("LLM_MENSAJES_DIARIOS_ADMIN", 40)),
@@ -269,14 +271,126 @@ def _limpiar_historial(historial):
     return limpio
 
 
+def nueva_traza():
+    """Acumula el consumo de una ejecucion (para registrarlo en llm_uso
+    aunque falle a mitad de camino)."""
+
+    return {
+        "uso": {"entrada": 0, "cache": 0, "salida": 0, "razonamiento": 0},
+        "pasos": 0,
+        "herramientas": [],
+    }
+
+
+def ejecutar_agente(instrucciones, entrada, herramientas, usuario,
+                    clave_cache, traza, formato=None, max_pasos=None,
+                    max_tokens=None):
+    """
+    Bucle de un agente: el modelo decide que herramientas usar, el
+    backend las ejecuta y el modelo responde con esos datos. Lo usan
+    los asistentes del chat y los agentes automaticos.
+
+    herramientas: {nombre: (definicion, funcion)}; cada funcion recibe
+    (usuario, **argumentos) y devuelve datos serializables.
+    formato: esquema JSON para obligar una respuesta estructurada.
+    Devuelve el texto final (JSON si se paso formato).
+    """
+
+    config = configuracion()
+    max_pasos = max_pasos or config["max_pasos"]
+
+    entrada = list(entrada)
+    definiciones = [definicion for definicion, _ in herramientas.values()]
+
+    texto_salida = {"verbosity": "low"}
+
+    if formato:
+        texto_salida["format"] = {"type": "json_schema", "strict": True, **formato}
+
+    respuesta = None
+
+    for paso in range(max_pasos):
+
+        opciones_herramientas = {}
+
+        if definiciones:
+            opciones_herramientas = {
+                "tools": definiciones,
+                # En el ultimo paso se obliga a responder con lo que
+                # ya tiene, para no encadenar llamadas sin fin.
+                "tool_choice": "none" if paso == max_pasos - 1 else "auto",
+                "parallel_tool_calls": True,
+            }
+
+        respuesta = _cliente_openai().responses.create(
+            model=config["modelo"],
+            instructions=instrucciones,
+            input=entrada,
+            max_output_tokens=max_tokens or config["max_tokens_salida"],
+            reasoning={"effort": "minimal"},
+            text=texto_salida,
+            # Sin guardar conversaciones en OpenAI; el razonamiento
+            # viaja cifrado entre pasos.
+            store=False,
+            include=["reasoning.encrypted_content"],
+            # Agrupa las peticiones de cada agente para que OpenAI
+            # reutilice el prefijo en cache.
+            prompt_cache_key=f"kimbos-{clave_cache}",
+            safety_identifier=f"kimbos-{usuario.get('id') or 'auto'}",
+            **opciones_herramientas,
+        )
+
+        traza["pasos"] += 1
+
+        if respuesta.usage:
+            detalles_entrada = respuesta.usage.input_tokens_details
+            detalles_salida = respuesta.usage.output_tokens_details
+            uso = traza["uso"]
+
+            uso["entrada"] += respuesta.usage.input_tokens
+            uso["salida"] += respuesta.usage.output_tokens
+            uso["cache"] += (
+                detalles_entrada.cached_tokens or 0
+                if detalles_entrada else 0
+            )
+            uso["razonamiento"] += (
+                detalles_salida.reasoning_tokens or 0
+                if detalles_salida else 0
+            )
+
+        llamadas = [
+            item for item in respuesta.output
+            if item.type == "function_call"
+        ]
+
+        if not llamadas:
+            break
+
+        entrada += [
+            item.model_dump(exclude_none=True)
+            for item in respuesta.output
+        ]
+
+        for llamada in llamadas:
+
+            traza["herramientas"].append(llamada.name)
+
+            entrada.append({
+                "type": "function_call_output",
+                "call_id": llamada.call_id,
+                "output": _ejecutar_herramienta(
+                    herramientas, usuario, llamada
+                ),
+            })
+
+    return (respuesta.output_text or "").strip() if respuesta else ""
+
+
 def responder(asistente, usuario, mensaje, historial, instrucciones,
               herramientas):
     """
-    Ejecuta el agente y devuelve {respuesta, costo_usd, pasos,
+    Asistente del chat. Devuelve {respuesta, costo_usd, pasos,
     herramientas, restantes_hoy}.
-
-    herramientas: {nombre: (definicion, funcion)}; cada funcion
-    recibe (usuario, **argumentos) y devuelve datos serializables.
     """
 
     mensaje = str(mensaje or "").strip()[:MAX_CARACTERES_MENSAJE]
@@ -289,91 +403,19 @@ def responder(asistente, usuario, mensaje, historial, instrucciones,
     if not estado["activo"]:
         raise LimiteAlcanzado(estado["motivo"])
 
-    config = configuracion()
-    modelo = config["modelo"]
+    modelo = configuracion()["modelo"]
 
     entrada = _limpiar_historial(historial)
     entrada.append({"role": "user", "content": mensaje})
 
-    definiciones = [definicion for definicion, _ in herramientas.values()]
-
-    uso = {"entrada": 0, "cache": 0, "salida": 0, "razonamiento": 0}
-    usadas = []
-    pasos = 0
+    traza = nueva_traza()
     inicio = time.monotonic()
-    respuesta = None
 
     try:
-
-        for paso in range(config["max_pasos"]):
-
-            ultimo_paso = paso == config["max_pasos"] - 1
-
-            respuesta = _cliente_openai().responses.create(
-                model=modelo,
-                instructions=instrucciones,
-                input=entrada,
-                tools=definiciones,
-                # En el ultimo paso se obliga a responder con lo que
-                # ya tiene, para no encadenar llamadas sin fin.
-                tool_choice="none" if ultimo_paso else "auto",
-                parallel_tool_calls=True,
-                max_output_tokens=config["max_tokens_salida"],
-                reasoning={"effort": "minimal"},
-                text={"verbosity": "low"},
-                # Sin guardar conversaciones en OpenAI; el
-                # razonamiento viaja cifrado entre pasos.
-                store=False,
-                include=["reasoning.encrypted_content"],
-                # Agrupa las peticiones de cada asistente para que
-                # OpenAI reutilice el prefijo en cache.
-                prompt_cache_key=f"kimbos-{asistente.lower()}",
-                safety_identifier=f"kimbos-{usuario['id']}",
-            )
-
-            pasos += 1
-
-            if respuesta.usage:
-                detalles_entrada = respuesta.usage.input_tokens_details
-                detalles_salida = respuesta.usage.output_tokens_details
-
-                uso["entrada"] += respuesta.usage.input_tokens
-                uso["salida"] += respuesta.usage.output_tokens
-                uso["cache"] += (
-                    detalles_entrada.cached_tokens or 0
-                    if detalles_entrada else 0
-                )
-                uso["razonamiento"] += (
-                    detalles_salida.reasoning_tokens or 0
-                    if detalles_salida else 0
-                )
-
-            llamadas = [
-                item for item in respuesta.output
-                if item.type == "function_call"
-            ]
-
-            if not llamadas:
-                break
-
-            entrada += [
-                item.model_dump(exclude_none=True)
-                for item in respuesta.output
-            ]
-
-            for llamada in llamadas:
-
-                usadas.append(llamada.name)
-
-                entrada.append({
-                    "type": "function_call_output",
-                    "call_id": llamada.call_id,
-                    "output": _ejecutar_herramienta(
-                        herramientas, usuario, llamada
-                    ),
-                })
-
-        texto = (respuesta.output_text or "").strip() if respuesta else ""
+        texto = ejecutar_agente(
+            instrucciones, entrada, herramientas, usuario,
+            asistente.lower(), traza,
+        )
 
         if not texto:
             texto = (
@@ -384,7 +426,8 @@ def responder(asistente, usuario, mensaje, historial, instrucciones,
     except Exception as error:
 
         registrar_uso(
-            usuario["id"], asistente, modelo, uso, pasos, usadas,
+            usuario["id"], asistente, modelo, traza["uso"],
+            traza["pasos"], traza["herramientas"],
             int((time.monotonic() - inicio) * 1000),
             ok=False, error=f"{type(error).__name__}: {error}",
         )
@@ -392,15 +435,16 @@ def responder(asistente, usuario, mensaje, historial, instrucciones,
         raise
 
     costo = registrar_uso(
-        usuario["id"], asistente, modelo, uso, pasos, usadas,
+        usuario["id"], asistente, modelo, traza["uso"],
+        traza["pasos"], traza["herramientas"],
         int((time.monotonic() - inicio) * 1000),
     )
 
     return {
         "respuesta": texto,
         "costo_usd": costo,
-        "pasos": pasos,
-        "herramientas": usadas,
+        "pasos": traza["pasos"],
+        "herramientas": traza["herramientas"],
         "restantes_hoy": max(estado["restantes_hoy"] - 1, 0),
     }
 

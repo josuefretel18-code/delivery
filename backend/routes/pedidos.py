@@ -7,6 +7,10 @@ from db import get_connection
 from backend.decorators import token_required, roles_required
 from decimal import Decimal, ROUND_HALF_UP
 from backend.ml_service import obtener_datos_ml, predecir_retraso
+from backend.agentes_automaticos import (
+    alertas_por_pedido,
+    disparar_alerta_si_riesgo
+)
 from backend.ml_reentrenamiento import (
     iniciar_reentrenamiento_automatico,
     reentrenamiento_automatico_activo,
@@ -855,6 +859,14 @@ def crear_pedido():
             conn.commit()
 
 
+        # Sistema multiagente: si el modelo ML marca riesgo de
+        # retraso, los agentes analizan el pedido en segundo plano.
+        disparar_alerta_si_riesgo(
+            pedido_id,
+            prediccion_ml
+        )
+
+
         return jsonify({
 
             "ok": True,
@@ -1142,6 +1154,16 @@ def mis_pedidos():
                 })
 
 
+    # Aviso de los agentes si el pedido tiene riesgo de retraso
+    avisos = alertas_por_pedido(
+        [pedido["id"] for pedido in pedidos],
+        solo_cliente=True
+    )
+
+    for pedido in pedidos:
+        pedido["aviso"] = avisos.get(pedido["id"])
+
+
     return jsonify({
         "ok": True,
         "total": len(pedidos),
@@ -1416,6 +1438,14 @@ def listar_pedidos():
 
                     "productos": productos
                 })
+
+    # Analisis del sistema multiagente (pedidos en riesgo)
+    alertas = alertas_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
+    for pedido in pedidos:
+        pedido["alerta"] = alertas.get(pedido["id"])
 
     return jsonify({
         "ok": True,

@@ -55,6 +55,16 @@ services:
         value: "8"
       - key: LLM_MENSAJES_DIARIOS_CLIENTE
         value: "15"
+      # Sistema multiagente: alerta de pedido en riesgo. Se dispara si
+      # la probabilidad de retraso del modelo ML supera este umbral.
+      - key: ALERTA_UMBRAL_RIESGO
+        value: "0.4"
+      - key: LLM_CORTE_AUTOMATIZACION_USD
+        value: "7"
+      # Reporte diario: Cloud Scheduler llama a /api/automatizacion/
+      # reporte-diario con esta clave (scripts/programar_reporte_gcp.ps1).
+      - key: AUTOMATIZACION_KEY
+        sync: false
 
       # Limita los hilos de las librerias numericas (menos memoria).
       - key: OMP_NUM_THREADS

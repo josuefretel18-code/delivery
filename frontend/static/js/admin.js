@@ -1514,6 +1514,7 @@ function renderizarPedidosAdmin(pedidos) {
                             `
                             : ""
                     }
+                    ${htmlAlertaAgentes(pedido)}
                     ${
                         pedido.resultado_real
                             ? `
@@ -2767,4 +2768,137 @@ async function desactivarProductoAdmin(
 
     }
 
+}
+
+
+
+/* ========================================================
+   SISTEMA MULTIAGENTE: ALERTA DE PEDIDO EN RIESGO
+======================================================== */
+
+const ACCIONES_AGENTES = {
+    PRIORIZAR_PREPARACION: "Priorizar la preparación",
+    ASIGNAR_REPARTIDOR_EXTRA: "Asignar un repartidor extra",
+    AJUSTAR_TIEMPO_ESTIMADO: "Ajustar el tiempo estimado",
+    MONITOREAR: "Monitorear"
+};
+
+
+function htmlAlertaAgentes(pedido) {
+
+    const alerta = pedido.alerta;
+
+    // Sin prediccion ML no hay nada que analizar.
+    if (!pedido.prediccion_ml) {
+        return "";
+    }
+
+    const enCurso =
+        pedido.estado?.codigo !== "ENTREGADO" &&
+        pedido.estado?.codigo !== "CANCELADO";
+
+    const boton = enCurso
+        ? `
+            <button
+                class="btn btn-sm btn-outline-dark mt-2"
+                onclick="analizarPedidoConAgentes(${pedido.id}, this)"
+            >
+                🤖 ${alerta ? "Volver a analizar" : "Analizar con agentes"}
+            </button>
+        `
+        : "";
+
+    if (!alerta) {
+        return enCurso ? `<div class="mb-3">${boton}</div>` : "";
+    }
+
+    if (alerta.estado === "PROCESANDO") {
+        return `
+            <div class="alerta-agentes">
+                <div class="alerta-agentes-titulo">🤖 Agentes analizando el pedido…</div>
+            </div>
+        `;
+    }
+
+    if (alerta.estado === "ERROR") {
+        return `
+            <div class="alerta-agentes">
+                <div class="alerta-agentes-titulo">🤖 Los agentes no pudieron analizar el pedido</div>
+                ${boton}
+            </div>
+        `;
+    }
+
+    const factores = (alerta.factores || [])
+        .map((factor) => `<li>${escaparHtmlAdmin(factor)}</li>`)
+        .join("");
+
+    return `
+        <div class="alerta-agentes nivel-${escaparHtmlAdmin((alerta.nivel || "").toLowerCase())}">
+
+            <div class="d-flex justify-content-between align-items-center gap-2">
+                <div class="alerta-agentes-titulo">🤖 Análisis multiagente</div>
+                <span class="badge alerta-agentes-nivel">Riesgo ${escaparHtmlAdmin(alerta.nivel || "--")}</span>
+            </div>
+
+            <div class="alerta-agentes-paso">
+                <strong>1 · Analista:</strong> ${escaparHtmlAdmin(alerta.causa)}
+                ${factores ? `<ul class="mb-0">${factores}</ul>` : ""}
+            </div>
+
+            <div class="alerta-agentes-paso">
+                <strong>2 · Operaciones:</strong>
+                ${escaparHtmlAdmin(ACCIONES_AGENTES[alerta.accion] || alerta.accion)}
+                ${alerta.minutos_extra ? `(+${alerta.minutos_extra} min)` : ""}
+                <div class="text-secondary">${escaparHtmlAdmin(alerta.justificacion)}</div>
+            </div>
+
+            <div class="alerta-agentes-paso">
+                <strong>3 · Comunicador</strong> (aviso al cliente):
+                <em>“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</em>
+            </div>
+
+            <div class="alerta-agentes-pie">
+                ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
+                · ${alerta.duracion_ms ? (alerta.duracion_ms / 1000).toFixed(1) + " s" : ""}
+                · USD ${Number(alerta.costo_usd || 0).toFixed(5)}
+            </div>
+
+            ${boton}
+        </div>
+    `;
+}
+
+
+async function analizarPedidoConAgentes(pedidoId, boton) {
+
+    const token = localStorage.getItem("kimbos_admin_token");
+
+    boton.disabled = true;
+    boton.textContent = "🤖 Analizando (≈15 s)…";
+
+    try {
+
+        const respuesta = await fetch(
+            `/api/automatizacion/pedidos/${pedidoId}/alerta`,
+            {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}` }
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo analizar el pedido.");
+        }
+
+        await cargarPedidosAdmin();
+
+    } catch (error) {
+
+        alert(error.message);
+        boton.disabled = false;
+        boton.textContent = "🤖 Analizar con agentes";
+    }
 }

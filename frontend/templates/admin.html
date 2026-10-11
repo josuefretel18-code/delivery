@@ -206,6 +206,16 @@
         🤖 Dashboard ML
     </button>
 
+    <button
+        id="btnReporteDiario"
+        class="btn btn-outline-dark"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalReporteDiario"
+    >
+        📋 Reporte diario
+    </button>
+
 
     <button
         id="btnActualizarPedidos"
@@ -730,6 +740,59 @@
 </div>
 
 
+<div
+    class="modal fade"
+    id="modalReporteDiario"
+    tabindex="-1"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+
+                <div>
+                    <h4 class="fw-bold mb-1">
+                        Reporte diario
+                    </h4>
+
+                    <p class="text-secondary mb-0">
+                        Generado cada día a las 23:00 por 3 agentes: Analista de datos → Estratega → Redactor.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Cerrar"
+                ></button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                    <select id="selectorReporte" class="form-select form-select-sm w-auto"></select>
+
+                    <button id="btnGenerarReporte" class="btn btn-sm btn-dark" type="button">
+                        🤖 Generar reporte de hoy
+                    </button>
+                </div>
+
+                <div id="contenidoReporte">
+                    <p class="text-secondary">Cargando...</p>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+
 <!-- Asistente con LLM para administradores y operadores (solo lectura) -->
 <div
     id="kimbosAsistente"
@@ -748,6 +811,11 @@
 
     <script
         src="{{ url_for('static', filename='js/admin.js') }}"
+    >
+    </script>
+
+    <script
+        src="{{ url_for('static', filename='js/reporte_diario.js') }}"
     >
     </script>
 

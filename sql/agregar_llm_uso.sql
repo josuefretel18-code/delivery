@@ -18,8 +18,9 @@ CREATE TABLE IF NOT EXISTS llm_uso (
         REFERENCES usuarios(id)
         ON DELETE SET NULL,
 
-    asistente VARCHAR(10) NOT NULL
-        CHECK (asistente IN ('CLIENTE', 'ADMIN')),
+    -- CLIENTE / ADMIN: asistentes del chat.
+    -- ALERTA / REPORTE: agentes automaticos.
+    asistente VARCHAR(10) NOT NULL,
 
     modelo VARCHAR(40) NOT NULL,
 
@@ -43,3 +44,11 @@ CREATE INDEX IF NOT EXISTS idx_llm_uso_fecha
 
 CREATE INDEX IF NOT EXISTS idx_llm_uso_usuario_fecha
     ON llm_uso (usuario_id, fecha);
+
+-- Valores permitidos (se reemplaza para admitir los agentes automaticos)
+ALTER TABLE llm_uso
+    DROP CONSTRAINT IF EXISTS llm_uso_asistente_check;
+
+ALTER TABLE llm_uso
+    ADD CONSTRAINT llm_uso_asistente_check
+    CHECK (asistente IN ('CLIENTE', 'ADMIN', 'ALERTA', 'REPORTE'));

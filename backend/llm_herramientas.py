@@ -105,6 +105,10 @@ def buscar_productos(usuario, texto=None, precio_max=None):
 
 def mis_pedidos(usuario):
 
+    from backend.agentes_automaticos import asegurar_tabla_alertas
+
+    asegurar_tabla_alertas()
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -124,6 +128,12 @@ def mis_pedidos(usuario):
                         )
                         FROM detalle_pedido d
                         WHERE d.pedido_id = p.id
+                    ),
+                    (
+                        SELECT a.mensaje_cliente
+                        FROM alertas_pedido a
+                        WHERE a.pedido_id = p.id
+                          AND a.estado = 'LISTA'
                     )
                 FROM pedidos p
                 JOIN estados_pedido e
@@ -153,6 +163,7 @@ def mis_pedidos(usuario):
                 "entregado": fila[5].strftime("%d/%m %H:%M") if fila[5] else None,
                 "riesgo_retraso": _riesgo(fila[6], fila[7]),
                 "productos": fila[8],
+                "aviso_de_kimbos": fila[9],
             }
             for fila in filas
         ]
