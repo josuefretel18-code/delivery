@@ -678,3 +678,14 @@ body {
     color: #6b3a00;
     font-size: 0.9rem;
 }
+
+
+/* Repartidor del pedido en Mis pedidos */
+
+.repartidor-cliente {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f7f7f7;
+    font-size: 0.9rem;
+}

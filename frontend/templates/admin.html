@@ -216,6 +216,16 @@
         📋 Reporte diario
     </button>
 
+    <button
+        id="btnRepartidores"
+        class="btn btn-outline-dark"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalRepartidores"
+    >
+        🛵 Repartidores
+    </button>
+
 
     <button
         id="btnActualizarPedidos"
@@ -782,6 +792,85 @@
                 </div>
 
                 <div id="contenidoReporte">
+                    <p class="text-secondary">Cargando...</p>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+
+<div
+    class="modal fade"
+    id="modalRepartidores"
+    tabindex="-1"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+
+                <div>
+                    <h4 class="fw-bold mb-1">
+                        Repartidores
+                    </h4>
+
+                    <p class="text-secondary mb-0">
+                        Registra a los repartidores y marca quién está en turno. Al enviar un pedido se sugiere al que tiene menos pedidos en ruta.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Cerrar"
+                ></button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <form id="formRepartidor" class="row g-2 align-items-end mb-4">
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold" for="repNombre">Nombre</label>
+                        <input id="repNombre" name="nombre" class="form-control form-control-sm" required minlength="3" maxlength="120">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-bold" for="repTelefono">Teléfono</label>
+                        <input id="repTelefono" name="telefono" class="form-control form-control-sm" maxlength="20">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-bold" for="repVehiculo">Vehículo</label>
+                        <select id="repVehiculo" name="tipo_vehiculo" class="form-select form-select-sm">
+                            <option value="MOTO">Moto</option>
+                            <option value="BICICLETA">Bicicleta</option>
+                            <option value="AUTO">Auto</option>
+                            <option value="CAMIONETA">Camioneta</option>
+                            <option value="OTRO">Otro</option>
+                        </select>
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-bold" for="repPlaca">Placa</label>
+                        <input id="repPlaca" name="placa" class="form-control form-control-sm" maxlength="20">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <button type="submit" class="btn btn-sm btn-dark w-100">+ Registrar</button>
+                    </div>
+
+                </form>
+
+                <div id="listaRepartidores">
                     <p class="text-secondary">Cargando...</p>
                 </div>
 

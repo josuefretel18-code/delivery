@@ -13,7 +13,7 @@ from pathlib import Path
 
 import requests
 
-from ml.variables import repartidores_disponibles
+from backend.repartidores import repartidores_en_turno
 
 
 RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
@@ -82,7 +82,8 @@ def predecir_retraso(
         "cantidad_items": int(cantidad_items),
         "pedidos_activos": int(pedidos_activos),
         "fecha_pedido": fecha_pedido.isoformat() if fecha_pedido else None,
-        "repartidores": repartidores_disponibles()
+        # Repartidores en turno (respaldo: REPARTIDORES_DISPONIBLES)
+        "repartidores": repartidores_en_turno()
     }
 
     if ml_remoto():

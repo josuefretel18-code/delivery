@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from db import get_connection
 from backend.ml_service import obtener_datos_ml, predecir_retraso
+from backend.repartidores import listar_repartidores
 
 
 COSTO_BASE_DELIVERY = Decimal("3.00")
@@ -264,10 +265,15 @@ def pedidos_activos(usuario):
                     p.tiempo_estimado_total_min,
                     p.total,
                     pm.clase_predicha,
-                    pm.probabilidad_retraso
+                    pm.probabilidad_retraso,
+                    u.nombre_completo
                 FROM pedidos p
                 JOIN estados_pedido e
                     ON e.id = p.estado_id
+                LEFT JOIN repartidores r
+                    ON r.id = p.repartidor_id
+                LEFT JOIN usuarios u
+                    ON u.id = r.usuario_id
                 LEFT JOIN LATERAL (
                     SELECT clase_predicha, probabilidad_retraso
                     FROM predicciones_ml
@@ -293,8 +299,17 @@ def pedidos_activos(usuario):
                 "tiempo_estimado_min": fila[3],
                 "total_soles": float(fila[4] or 0),
                 "riesgo_retraso": _riesgo(fila[5], fila[6]),
+                "repartidor": fila[7],
             }
             for fila in filas
+        ],
+        "repartidores": [
+            {
+                "nombre": r["nombre"],
+                "en_turno": r["en_turno"],
+                "pedidos_activos": r["pedidos_activos"],
+            }
+            for r in listar_repartidores(solo_activos=True)
         ],
     }
 

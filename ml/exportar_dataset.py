@@ -235,6 +235,16 @@ consulta = """
         pedidos_activos_momento
             AS pedidos_activos,
 
+        -- Repartidores en turno al momento del pedido (guardado con
+        -- la prediccion). Pedidos antiguos: valor configurado.
+        (
+            SELECT pm.repartidores_disponibles
+            FROM predicciones_ml pm
+            WHERE pm.pedido_id = pedidos.id
+            ORDER BY pm.id DESC
+            LIMIT 1
+        ) AS repartidores_momento,
+
         tiempo_estimado_total_min,
         duracion_real_min,
 
@@ -273,11 +283,17 @@ repartidores_kimbos = repartidores_disponibles()
 kimbos["fuente_datos"] = "REAL"
 kimbos["hora_pico"] = kimbos["hora_pedido"].map(es_hora_pico)
 kimbos["fin_semana"] = kimbos["dia_semana"].map(es_fin_semana)
-kimbos["repartidores"] = repartidores_kimbos
+kimbos["repartidores"] = (
+    pd.to_numeric(kimbos["repartidores_momento"], errors="coerce")
+    .fillna(repartidores_kimbos)
+    .clip(lower=1)
+    .astype(int)
+)
 
 kimbos["carga_repartidor"] = [
-    carga_repartidor(pedidos, repartidores_kimbos)
-    for pedidos in kimbos["pedidos_activos"]
+    carga_repartidor(pedidos, repartidores)
+    for pedidos, repartidores
+    in zip(kimbos["pedidos_activos"], kimbos["repartidores"])
 ]
 
 kimbos = kimbos.reindex(columns=COLUMNAS_SALIDA)

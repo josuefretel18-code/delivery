@@ -657,3 +657,15 @@ body {
     color: #5b4fc7;
     margin-bottom: 6px;
 }
+
+
+/* Repartidor del pedido */
+
+.repartidor-pedido {
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f7f7f7;
+    border: 1px solid #ececec;
+    font-size: 0.9rem;
+}

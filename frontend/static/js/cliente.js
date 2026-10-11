@@ -2804,6 +2804,23 @@ function renderizarMisPedidos(
                     ${construirAvisoAgentes(pedido)}
 
 
+                    ${
+                        pedido.repartidor &&
+                        pedido.estado.codigo !== "CANCELADO"
+                            ? `
+                                <div class="repartidor-cliente">
+                                    🛵 ${
+                                        pedido.estado.codigo === "ENTREGADO"
+                                            ? "Te lo entregó"
+                                            : "Te lo lleva"
+                                    }
+                                    <strong>${escaparHtml(pedido.repartidor.nombre)}</strong>
+                                </div>
+                            `
+                            : ""
+                    }
+
+
                     ${seguimiento}
 
                 </div>

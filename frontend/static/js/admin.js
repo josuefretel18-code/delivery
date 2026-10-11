@@ -377,6 +377,10 @@ async function cargarPedidosAdmin() {
     );
 
 
+    // Repartidores para el selector de asignacion
+    await cargarRepartidoresAdmin();
+
+
     try {
 
         const respuesta =
@@ -1619,6 +1623,9 @@ function renderizarPedidosAdmin(pedidos) {
                     }
 
 
+                    ${htmlRepartidorPedido(pedido)}
+
+
                     ${
                         accion.siguienteEstado
                             ? `
@@ -1771,10 +1778,12 @@ async function cambiarEstadoPedido(
                     },
 
                     body:
-                        JSON.stringify({
-                            estado:
+                        JSON.stringify(
+                            cuerpoCambioEstado(
+                                pedidoId,
                                 nuevoEstado
-                        })
+                            )
+                        )
                 }
             );
 
@@ -2900,3 +2909,281 @@ async function analizarPedidoConAgentes(pedidoId, boton) {
         boton.textContent = "🤖 Analizar con agentes";
     }
 }
+
+
+
+/* ========================================================
+   REPARTIDORES
+   El admin registra a los repartidores, marca quién está en
+   turno y confirma a quién se asigna cada pedido (el sistema
+   sugiere al que está en turno con menos pedidos activos).
+======================================================== */
+
+let repartidoresAdmin = [];
+let repartidorSugeridoId = null;
+
+const VEHICULOS_REPARTIDOR = {
+    MOTO: "🛵 Moto",
+    BICICLETA: "🚲 Bicicleta",
+    AUTO: "🚗 Auto",
+    CAMIONETA: "🚐 Camioneta",
+    OTRO: "Otro"
+};
+
+
+async function cargarRepartidoresAdmin() {
+
+    try {
+
+        const respuesta = await fetch("/api/repartidores", {
+            headers: {
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            }
+        });
+
+        const datos = await respuesta.json();
+
+        if (respuesta.ok && datos.ok) {
+            repartidoresAdmin = datos.repartidores;
+            repartidorSugeridoId = datos.sugerido_id;
+        }
+
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+
+function cuerpoCambioEstado(pedidoId, nuevoEstado) {
+
+    const cuerpo = { estado: nuevoEstado };
+
+    const selector = document.getElementById(`repartidorPedido${pedidoId}`);
+
+    if (nuevoEstado === "EN_RUTA" && selector) {
+        cuerpo.repartidor_id = selector.value ? Number(selector.value) : null;
+    }
+
+    return cuerpo;
+}
+
+
+function htmlRepartidorPedido(pedido) {
+
+    // Ya tiene repartidor: se muestra quién lo lleva.
+    if (pedido.repartidor) {
+        return `
+            <div class="repartidor-pedido">
+                ${VEHICULOS_REPARTIDOR[pedido.repartidor.tipo_vehiculo] || "🛵"}
+                <strong>${escaparHtmlAdmin(pedido.repartidor.nombre)}</strong>
+                ${pedido.repartidor.telefono ? `· ${escaparHtmlAdmin(pedido.repartidor.telefono)}` : ""}
+            </div>
+        `;
+    }
+
+    // Solo al enviar (PREPARANDO → EN_RUTA) se elige el repartidor.
+    if (pedido.estado?.codigo !== "PREPARANDO") {
+        return "";
+    }
+
+    const activos = repartidoresAdmin.filter((r) => r.activo);
+
+    if (!activos.length) {
+        return `
+            <div class="repartidor-pedido text-secondary">
+                Sin repartidores registrados: el pedido se enviará sin asignar.
+            </div>
+        `;
+    }
+
+    const opciones = activos
+        .map((r) => `
+            <option value="${r.id}" ${r.id === repartidorSugeridoId ? "selected" : ""}>
+                ${escaparHtmlAdmin(r.nombre)}
+                ${r.en_turno ? "" : "(fuera de turno)"}
+                · ${r.pedidos_activos} en ruta
+                ${r.id === repartidorSugeridoId ? "· sugerido ⭐" : ""}
+            </option>
+        `)
+        .join("");
+
+    return `
+        <div class="repartidor-pedido">
+            <label class="form-label small fw-bold mb-1" for="repartidorPedido${pedido.id}">
+                🛵 Repartidor que llevará el pedido
+            </label>
+            <select id="repartidorPedido${pedido.id}" class="form-select form-select-sm">
+                ${repartidorSugeridoId ? "" : `<option value="">Selecciona un repartidor</option>`}
+                ${opciones}
+            </select>
+        </div>
+    `;
+}
+
+
+function renderizarRepartidoresModal() {
+
+    const contenedor = document.getElementById("listaRepartidores");
+
+    if (!contenedor) {
+        return;
+    }
+
+    const esAdmin = usuarioAdmin && usuarioAdmin.rol === "ADMIN";
+
+    if (!repartidoresAdmin.length) {
+        contenedor.innerHTML = `
+            <p class="text-secondary">Aún no hay repartidores registrados.</p>
+        `;
+        return;
+    }
+
+    const enTurno = repartidoresAdmin.filter((r) => r.activo && r.en_turno).length;
+
+    contenedor.innerHTML = `
+        <p class="small text-secondary mb-2">
+            En turno: <strong>${enTurno}</strong>. El modelo ML usa este número para calcular la carga por repartidor.
+        </p>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Código</th><th>Nombre</th><th>Teléfono</th><th>Vehículo</th>
+                        <th>En ruta</th><th>Entregas hoy</th><th>En turno</th>
+                        ${esAdmin ? "<th>Activo</th>" : ""}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${repartidoresAdmin.map((r) => `
+                        <tr class="${r.activo ? "" : "text-secondary"}">
+                            <td>${escaparHtmlAdmin(r.codigo)}</td>
+                            <td><strong>${escaparHtmlAdmin(r.nombre)}</strong></td>
+                            <td>${escaparHtmlAdmin(r.telefono || "-")}</td>
+                            <td>${VEHICULOS_REPARTIDOR[r.tipo_vehiculo] || r.tipo_vehiculo} ${escaparHtmlAdmin(r.placa || "")}</td>
+                            <td>${r.pedidos_activos}</td>
+                            <td>${r.entregas_hoy}</td>
+                            <td>
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox"
+                                        ${r.en_turno ? "checked" : ""} ${r.activo ? "" : "disabled"}
+                                        onchange="actualizarRepartidor(${r.id}, { en_turno: this.checked })">
+                                </div>
+                            </td>
+                            ${esAdmin ? `
+                                <td>
+                                    <div class="form-check form-switch m-0">
+                                        <input class="form-check-input" type="checkbox"
+                                            ${r.activo ? "checked" : ""}
+                                            onchange="actualizarRepartidor(${r.id}, { activo: this.checked })">
+                                    </div>
+                                </td>
+                            ` : ""}
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+
+async function actualizarRepartidor(repartidorId, cambios) {
+
+    try {
+
+        const respuesta = await fetch(`/api/repartidores/${repartidorId}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            },
+            body: JSON.stringify(cambios)
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo actualizar el repartidor.");
+        }
+
+    } catch (error) {
+        alert(error.message);
+    }
+
+    await cargarRepartidoresAdmin();
+    renderizarRepartidoresModal();
+    await cargarPedidosAdmin();
+}
+
+
+async function registrarRepartidor(evento) {
+
+    evento.preventDefault();
+
+    const formulario = evento.target;
+    const boton = formulario.querySelector("button[type=submit]");
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch("/api/repartidores", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            },
+            body: JSON.stringify({
+                nombre: formulario.nombre.value,
+                telefono: formulario.telefono.value,
+                tipo_vehiculo: formulario.tipo_vehiculo.value,
+                placa: formulario.placa.value
+            })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo registrar el repartidor.");
+        }
+
+        formulario.reset();
+
+        await cargarRepartidoresAdmin();
+        renderizarRepartidoresModal();
+        await cargarPedidosAdmin();
+
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const modal = document.getElementById("modalRepartidores");
+    const formulario = document.getElementById("formRepartidor");
+
+    if (modal) {
+        modal.addEventListener("show.bs.modal", async () => {
+
+            // El registro solo lo hace el ADMIN
+            if (formulario) {
+                formulario.classList.toggle(
+                    "d-none",
+                    !(usuarioAdmin && usuarioAdmin.rol === "ADMIN")
+                );
+            }
+
+            await cargarRepartidoresAdmin();
+            renderizarRepartidoresModal();
+        });
+    }
+
+    if (formulario) {
+        formulario.addEventListener("submit", registrarRepartidor);
+    }
+});

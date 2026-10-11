@@ -31,6 +31,7 @@ from backend.agentes_automaticos import (
 )
 from backend.llm_agente import configuracion, gasto_mes_usd, llm_configurado
 from backend.llm_herramientas import HERRAMIENTAS_ADMIN
+from backend.repartidores import repartidores_en_turno
 
 
 ZONA = "America/Lima"
@@ -175,6 +176,31 @@ def metricas_del_dia(fecha):
 
             alertas = {fila[0]: fila[1] for fila in cur.fetchall()}
 
+            cur.execute(f"""
+                SELECT
+                    u.nombre_completo,
+                    COUNT(*) FILTER (WHERE e.codigo = 'ENTREGADO'),
+                    COUNT(*) FILTER (WHERE p.retraso IS TRUE),
+                    ROUND(AVG(p.duracion_real_min)::numeric, 1)
+                FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
+                JOIN repartidores r ON r.id = p.repartidor_id
+                JOIN usuarios u ON u.id = r.usuario_id
+                WHERE {filtro}
+                GROUP BY 1
+                ORDER BY 2 DESC;
+            """, (fecha,))
+
+            por_repartidor = [
+                {
+                    "repartidor": fila[0],
+                    "entregas": fila[1],
+                    "retrasos": fila[2],
+                    "tiempo_real_promedio_min": _numero(fila[3]),
+                }
+                for fila in cur.fetchall()
+            ]
+
     vendidos = total - cancelados
 
     return {
@@ -199,7 +225,8 @@ def metricas_del_dia(fecha):
             "riesgo_promedio_pct": _numero(riesgo_prom),
         },
         "alertas_multiagente": alertas,
-        "repartidores_disponibles": int(os.getenv("REPARTIDORES_DISPONIBLES", "2")),
+        "entregas_por_repartidor": por_repartidor,
+        "repartidores_disponibles": repartidores_en_turno(),
     }
 
 
@@ -249,7 +276,7 @@ AGENTE_ANALISTA_DATOS = {
     "instrucciones": """Eres el Agente Analista de Datos de Kimbos, un delivery en Peru. Recibes los indicadores del dia, ya calculados por el sistema.
 
 Tu tarea: escribir de 3 a 5 hallazgos concretos del dia, con cifras.
-- Revisa ventas, pedidos por hora (picos), productos mas vendidos, retrasos reales, tiempo real vs estimado y aciertos del modelo de Machine Learning.
+- Revisa ventas, pedidos por hora (picos), productos mas vendidos, retrasos reales, tiempo real vs estimado, entregas por repartidor y aciertos del modelo de Machine Learning.
 - Puedes usar resumen_ultimos_dias para comparar con dias anteriores y estado_modelo para el modelo ML vigente. Usa como maximo dos herramientas.
 - Si hay pocos datos (menos de 5 pedidos), dilo en un hallazgo: las conclusiones son preliminares.
 - Usa solo las cifras recibidas o de las herramientas; no inventes. Espanol, frases cortas.""",

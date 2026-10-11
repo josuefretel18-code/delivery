@@ -11,6 +11,7 @@ from backend.agentes_automaticos import (
     alertas_por_pedido,
     disparar_alerta_si_riesgo
 )
+from backend.repartidores import repartidores_por_pedido
 from backend.ml_reentrenamiento import (
     iniciar_reentrenamiento_automatico,
     reentrenamiento_automatico_activo,
@@ -1160,8 +1161,24 @@ def mis_pedidos():
         solo_cliente=True
     )
 
+    repartidores = repartidores_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["aviso"] = avisos.get(pedido["id"])
+
+        repartidor = repartidores.get(pedido["id"])
+
+        # Al cliente solo el nombre y el vehiculo de quien lo lleva.
+        pedido["repartidor"] = (
+            {
+                "nombre": repartidor["nombre"],
+                "tipo_vehiculo": repartidor["tipo_vehiculo"]
+            }
+            if repartidor
+            else None
+        )
 
 
     return jsonify({
@@ -1444,8 +1461,13 @@ def listar_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    repartidores = repartidores_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["alerta"] = alertas.get(pedido["id"])
+        pedido["repartidor"] = repartidores.get(pedido["id"])
 
     return jsonify({
         "ok": True,
@@ -1561,14 +1583,64 @@ def actualizar_estado_pedido(pedido_id):
 
             elif nuevo_estado == "EN_RUTA":
 
+                # El admin confirma el repartidor (el panel sugiere al
+                # que esta en turno con menos pedidos activos). Si aun
+                # no hay repartidores registrados, se envia sin asignar.
+
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM repartidores
+                    WHERE activo = TRUE;
+                """)
+
+                hay_repartidores = cur.fetchone()[0] > 0
+
+                repartidor_id = datos.get("repartidor_id")
+
+                if hay_repartidores and not repartidor_id:
+                    return jsonify({
+                        "ok": False,
+                        "mensaje": "Selecciona el repartidor que llevará el pedido"
+                    }), 400
+
+                if repartidor_id:
+
+                    cur.execute("""
+                        SELECT u.nombre_completo
+                        FROM repartidores r
+                        JOIN usuarios u
+                            ON u.id = r.usuario_id
+                        WHERE r.id = %s
+                          AND r.activo = TRUE;
+                    """, (
+                        repartidor_id,
+                    ))
+
+                    repartidor = cur.fetchone()
+
+                    if not repartidor:
+                        return jsonify({
+                            "ok": False,
+                            "mensaje": "El repartidor no existe o está inactivo"
+                        }), 400
+
+                    nombre_repartidor = repartidor[0]
+
                 cur.execute("""
                     UPDATE pedidos
                     SET
                         estado_id = %s,
-                        fecha_recojo = CURRENT_TIMESTAMP
+                        fecha_recojo = CURRENT_TIMESTAMP,
+                        repartidor_id = %s,
+                        fecha_asignacion = CASE
+                            WHEN %s::bigint IS NULL THEN fecha_asignacion
+                            ELSE CURRENT_TIMESTAMP
+                        END
                     WHERE id = %s;
                 """, (
                     nuevo_estado_id,
+                    repartidor_id,
+                    repartidor_id,
                     pedido_id
                 ))
 
@@ -1619,7 +1691,12 @@ def actualizar_estado_pedido(pedido_id):
 
             mensajes = {
                 "PREPARANDO": "Pedido en preparación",
-                "EN_RUTA": "Pedido en camino",
+                "EN_RUTA": (
+                    f"Pedido en camino con {nombre_repartidor}"
+                    if nuevo_estado == "EN_RUTA"
+                    and datos.get("repartidor_id")
+                    else "Pedido en camino"
+                ),
                 "ENTREGADO": "Pedido entregado"
             }
 
