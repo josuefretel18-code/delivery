@@ -109,8 +109,13 @@
             .join("") || "<li class='text-secondary'>Sin ventas</li>";
 
         contenido.innerHTML = `
-            <h5 class="fw-bold mb-1">${escapar(reporte.titulo)}</h5>
-            <p class="mb-3">${escapar(reporte.resumen)}</p>
+            <div class="reporte-resumen mb-4">
+                <div class="reporte-resumen-etiqueta">
+                    3 · Agente Redactor: resumen ejecutivo
+                </div>
+                <h5 class="fw-bold mb-1">${escapar(reporte.titulo)}</h5>
+                <p class="mb-0">${escapar(reporte.resumen)}</p>
+            </div>
 
             <div class="row g-3 mb-4">
                 ${tarjeta("Pedidos", m.pedidos ?? 0, `${m.entregados ?? 0} entregados · ${m.cancelados ?? 0} cancelados`)}
@@ -136,10 +141,7 @@
             </div>
 
             <p class="text-secondary small mt-3 mb-0">
-                3 · Agente Redactor: título y resumen ·
                 ${reporte.origen === "PROGRAMADO" ? "Generado automáticamente (Cloud Scheduler)" : "Generado manualmente"}
-                · ${reporte.duracion_ms ? (reporte.duracion_ms / 1000).toFixed(1) + " s" : "sin uso del LLM"}
-                · USD ${Number(reporte.costo_usd || 0).toFixed(5)}
             </p>
         `;
     }

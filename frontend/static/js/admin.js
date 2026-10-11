@@ -2860,8 +2860,6 @@ function htmlAlertaAgentes(pedido) {
 
             <div class="alerta-agentes-pie">
                 ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
-                · ${alerta.duracion_ms ? (alerta.duracion_ms / 1000).toFixed(1) + " s" : ""}
-                · USD ${Number(alerta.costo_usd || 0).toFixed(5)}
             </div>
 
             ${boton}

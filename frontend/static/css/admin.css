@@ -640,3 +640,20 @@ body {
     font-size: 0.75rem;
     color: #777;
 }
+
+
+/* Reporte diario: resumen del Agente Redactor */
+
+.reporte-resumen {
+    padding: 16px 18px;
+    border-radius: 14px;
+    border: 1px solid #d8d4f5;
+    background: #f5f3ff;
+}
+
+.reporte-resumen-etiqueta {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #5b4fc7;
+    margin-bottom: 6px;
+}
