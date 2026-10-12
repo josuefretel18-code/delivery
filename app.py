@@ -13,6 +13,7 @@ from backend.routes.catalogo import catalogo_bp
 from backend.routes.asistente import asistente_bp
 from backend.routes.automatizacion import automatizacion_bp
 from backend.routes.repartidores import repartidores_bp
+from backend.routes.dashboard import dashboard_bp
 from backend.repartidores import asegurar_columna_turno
 
 
@@ -34,6 +35,7 @@ app.register_blueprint(catalogo_bp)
 app.register_blueprint(asistente_bp)
 app.register_blueprint(automatizacion_bp)
 app.register_blueprint(repartidores_bp)
+app.register_blueprint(dashboard_bp)
 
 
 # Columnas de repartidores (turno y espera): se aplican al arrancar, no

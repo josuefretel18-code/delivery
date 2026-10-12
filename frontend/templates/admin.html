@@ -197,6 +197,16 @@
     </button>
 
     <button
+        id="btnDashboard"
+        class="btn btn-outline-dark"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalDashboard"
+    >
+        📊 Dashboard
+    </button>
+
+    <button
         id="btnDashboardML"
         class="btn btn-outline-dark"
         type="button"
@@ -882,6 +892,62 @@
 </div>
 
 
+<div
+    class="modal fade"
+    id="modalDashboard"
+    tabindex="-1"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+
+                <div>
+                    <h4 class="fw-bold mb-1">
+                        Dashboard
+                    </h4>
+
+                    <p class="text-secondary mb-0">
+                        Ventas, entregas, repartidores, modelo ML y agentes del período.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal"
+                    aria-label="Cerrar"
+                ></button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <div
+                    id="filtrosDashboard"
+                    class="btn-group btn-group-sm mb-3"
+                    role="group"
+                    aria-label="Período"
+                >
+                    <button type="button" class="btn btn-outline-dark" data-periodo="1">Hoy</button>
+                    <button type="button" class="btn btn-outline-dark active" data-periodo="7">7 días</button>
+                    <button type="button" class="btn btn-outline-dark" data-periodo="30">30 días</button>
+                </div>
+
+                <div id="contenidoDashboard">
+                    <p class="text-secondary">Cargando...</p>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+
 <!-- Asistente con LLM para administradores y operadores (solo lectura) -->
 <div
     id="kimbosAsistente"
@@ -905,6 +971,16 @@
 
     <script
         src="{{ url_for('static', filename='js/reporte_diario.js') }}"
+    >
+    </script>
+
+    <script
+        src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+    >
+    </script>
+
+    <script
+        src="{{ url_for('static', filename='js/dashboard.js') }}"
     >
     </script>
 
