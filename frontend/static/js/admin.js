@@ -1912,6 +1912,10 @@ function cerrarSesionAdmin() {
         "formAdminLogin"
     ).reset();
 
+
+    // Vuelve a la pagina principal de la tienda
+    window.location.href = "/";
+
 }
 /* ========================================================
    PRODUCTOS

@@ -6,7 +6,48 @@
 
 const CLAVE_TOKEN = "kimbos_repartidor_token";
 
+// La sesion se cierra sola tras este tiempo sin uso (tocar, escribir,
+// desplazarse). La actualizacion automatica no cuenta como uso.
+const MINUTOS_INACTIVIDAD = 10;
+const CLAVE_ACTIVIDAD = "kimbos_repartidor_actividad";
+
 let temporizador = null;
+let vigilanteInactividad = null;
+
+
+function registrarActividad() {
+
+    if (token()) {
+        localStorage.setItem(CLAVE_ACTIVIDAD, String(Date.now()));
+    }
+}
+
+
+function sesionInactiva() {
+
+    const ultima = Number(localStorage.getItem(CLAVE_ACTIVIDAD) || 0);
+
+    // Sin registro = recien ingresado (aun no hubo tiempo de inactividad)
+    if (!ultima) {
+        return false;
+    }
+
+    return Date.now() - ultima > MINUTOS_INACTIVIDAD * 60000;
+}
+
+
+function vigilarInactividad() {
+
+    clearInterval(vigilanteInactividad);
+
+    vigilanteInactividad = setInterval(() => {
+
+        if (token() && sesionInactiva()) {
+            cerrarSesion(`Tu sesión se cerró por ${MINUTOS_INACTIVIDAD} minutos de inactividad. Vuelve a ingresar.`);
+        }
+
+    }, 15000);
+}
 
 
 function token() {
@@ -61,7 +102,9 @@ function mostrar(vista) {
 function cerrarSesion(mensaje) {
 
     localStorage.removeItem(CLAVE_TOKEN);
+    localStorage.removeItem(CLAVE_ACTIVIDAD);
     clearInterval(temporizador);
+    clearInterval(vigilanteInactividad);
     mostrar("login");
 
     if (mensaje) {
@@ -103,6 +146,7 @@ async function iniciarSesion(evento) {
         }
 
         localStorage.setItem(CLAVE_TOKEN, datos.token);
+        registrarActividad();
         document.getElementById("password").value = "";
 
         await entrarAlPanel();
@@ -242,6 +286,7 @@ async function actualizar() {
 async function entrarAlPanel() {
 
     mostrar("panel");
+    vigilarInactividad();
     await actualizar();
 
     clearInterval(temporizador);
@@ -288,14 +333,37 @@ async function cambiarTurno(evento) {
 document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("formLogin").addEventListener("submit", iniciarSesion);
-    document.getElementById("btnSalir").addEventListener("click", () => cerrarSesion());
+    // Cerrar sesion a mano: vuelve a la pagina principal de la tienda
+    document.getElementById("btnSalir").addEventListener("click", () => {
+        localStorage.removeItem(CLAVE_TOKEN);
+        localStorage.removeItem(CLAVE_ACTIVIDAD);
+        clearInterval(temporizador);
+        clearInterval(vigilanteInactividad);
+        window.location.href = "/";
+    });
+
+    // Uso real de la persona (no la actualizacion automatica)
+    ["click", "keydown", "touchstart", "scroll"].forEach((tipo) => {
+        document.addEventListener(tipo, registrarActividad, { passive: true });
+    });
+
+    // Al volver a la pestana (celular desbloqueado): revisar en el acto
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && token() && sesionInactiva()) {
+            cerrarSesion(`Tu sesión se cerró por ${MINUTOS_INACTIVIDAD} minutos de inactividad. Vuelve a ingresar.`);
+        }
+    });
     document.getElementById("switchTurno").addEventListener("change", cambiarTurno);
     document.getElementById("btnActualizar").addEventListener("click", (evento) => {
         evento.preventDefault();
         actualizar();
     });
 
-    if (token()) {
+    if (token() && sesionInactiva()) {
+        // Se dejo abierta y paso el tiempo sin uso
+        cerrarSesion(`Tu sesión se cerró por ${MINUTOS_INACTIVIDAD} minutos de inactividad. Vuelve a ingresar.`);
+    } else if (token()) {
+        registrarActividad();
         entrarAlPanel();
     } else {
         mostrar("login");

@@ -219,6 +219,12 @@
                 }
 
                 localStorage.setItem(destino[0], datos.token);
+
+                // Inicio del conteo de inactividad del panel del repartidor
+                if (datos.usuario.rol === "REPARTIDOR") {
+                    localStorage.setItem("kimbos_repartidor_actividad", String(Date.now()));
+                }
+
                 window.location.href = destino[1];
 
             } catch (error) {

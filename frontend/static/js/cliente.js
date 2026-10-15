@@ -780,6 +780,10 @@ async function iniciarSesion(
             datos.token
         );
 
+
+        // Inicio del conteo de inactividad (cierre a los 10 min sin uso)
+        registrarActividadCliente();
+
         await cargarPerfil();
 
         actualizarInterfazUsuario();
@@ -3088,5 +3092,118 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     } catch (error) {
         console.error(error);
+    }
+});
+
+
+
+/* ========================================================
+   CIERRE DE SESIÓN POR INACTIVIDAD (10 minutos)
+   Cuenta como uso: tocar, hacer clic, escribir o desplazarse.
+   No se recarga la página: el carrito se conserva.
+======================================================== */
+
+const MINUTOS_INACTIVIDAD_CLIENTE = 10;
+const CLAVE_ACTIVIDAD_CLIENTE = "kimbos_cliente_actividad";
+
+
+function registrarActividadCliente() {
+
+    if (localStorage.getItem("kimbos_token")) {
+        localStorage.setItem(CLAVE_ACTIVIDAD_CLIENTE, String(Date.now()));
+    }
+}
+
+
+function clienteInactivo() {
+
+    const ultima = Number(localStorage.getItem(CLAVE_ACTIVIDAD_CLIENTE) || 0);
+
+    // Sin registro = recien ingresado
+    if (!ultima) {
+        return false;
+    }
+
+    return Date.now() - ultima > MINUTOS_INACTIVIDAD_CLIENTE * 60000;
+}
+
+
+function avisoCliente(texto) {
+
+    let aviso = document.getElementById("avisoInactividad");
+
+    if (!aviso) {
+        aviso = document.createElement("div");
+        aviso.id = "avisoInactividad";
+        aviso.className = "aviso-inactividad";
+        aviso.setAttribute("role", "status");
+        document.body.appendChild(aviso);
+    }
+
+    aviso.textContent = texto;
+    aviso.classList.add("visible");
+
+    setTimeout(() => aviso.classList.remove("visible"), 8000);
+}
+
+
+function cerrarSesionPorInactividad() {
+
+    localStorage.removeItem("kimbos_token");
+    localStorage.removeItem(CLAVE_ACTIVIDAD_CLIENTE);
+
+    usuarioActual = null;
+
+    if (typeof actualizarInterfazUsuario === "function") {
+        actualizarInterfazUsuario();
+    }
+
+    avisoCliente(
+        `Tu sesión se cerró por ${MINUTOS_INACTIVIDAD_CLIENTE} minutos de inactividad. ` +
+        "Tu carrito se conserva; ingresa de nuevo para hacer tu pedido."
+    );
+}
+
+
+// Si la pagina se abre despues del tiempo sin uso, la sesion guardada
+// se descarta antes de que la tienda la cargue.
+if (localStorage.getItem("kimbos_token") && clienteInactivo()) {
+
+    localStorage.removeItem("kimbos_token");
+    localStorage.removeItem(CLAVE_ACTIVIDAD_CLIENTE);
+
+    document.addEventListener("DOMContentLoaded", () => {
+        avisoCliente(
+            `Tu sesión se cerró por ${MINUTOS_INACTIVIDAD_CLIENTE} minutos de inactividad. Ingresa de nuevo.`
+        );
+    });
+
+} else {
+    registrarActividadCliente();
+}
+
+
+["click", "keydown", "touchstart", "scroll"].forEach((tipo) => {
+    document.addEventListener(tipo, registrarActividadCliente, { passive: true });
+});
+
+
+// Revision periodica y al volver a la pestaña
+setInterval(() => {
+
+    if (localStorage.getItem("kimbos_token") && clienteInactivo()) {
+        cerrarSesionPorInactividad();
+    }
+
+}, 15000);
+
+document.addEventListener("visibilitychange", () => {
+
+    if (
+        document.visibilityState === "visible" &&
+        localStorage.getItem("kimbos_token") &&
+        clienteInactivo()
+    ) {
+        cerrarSesionPorInactividad();
     }
 });
