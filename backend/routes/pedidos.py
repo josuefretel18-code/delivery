@@ -1550,7 +1550,16 @@ def listar_pedidos():
 @roles_required("ADMIN", "OPERADOR")
 def actualizar_estado_pedido(pedido_id):
 
-    datos = request.get_json(silent=True) or {}
+    return cambiar_estado_pedido(
+        pedido_id,
+        request.get_json(silent=True) or {}
+    )
+
+
+def cambiar_estado_pedido(pedido_id, datos):
+    """Avanza el estado de un pedido. La usan el panel admin y el
+    panel del repartidor (este solo para marcar ENTREGADO sus propios
+    pedidos). El historial y la auditoria quedan a nombre de g.usuario."""
 
     nuevo_estado = str(
         datos.get("estado", "")
@@ -1568,7 +1577,8 @@ def actualizar_estado_pedido(pedido_id):
             cur.execute("""
                 SELECT
                     p.codigo,
-                    e.codigo
+                    e.codigo,
+                    p.repartidor_id
                 FROM pedidos p
                 JOIN estados_pedido e
                     ON e.id = p.estado_id
@@ -1587,6 +1597,22 @@ def actualizar_estado_pedido(pedido_id):
 
             codigo_pedido = pedido[0]
             estado_actual = pedido[1]
+
+            # La entrega la confirma el repartidor desde su panel. El
+            # admin solo puede marcarla si el pedido salio sin
+            # repartidor asignado (si no, quedaria atascado).
+            if (
+                nuevo_estado == "ENTREGADO"
+                and pedido[2] is not None
+                and g.usuario["rol"] != "REPARTIDOR"
+            ):
+                return jsonify({
+                    "ok": False,
+                    "mensaje": (
+                        "La entrega la marca el repartidor "
+                        "desde su panel"
+                    )
+                }), 403
 
             if estado_actual == "ENTREGADO":
                 return jsonify({

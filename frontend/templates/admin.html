@@ -884,6 +884,36 @@
 
                 </form>
 
+                <form id="formAccesoRepartidor" class="row g-2 align-items-end mb-4 acceso-repartidor">
+
+                    <div class="col-12">
+                        <strong>🔑 Acceso al panel del repartidor</strong>
+                        <span class="small text-secondary">
+                            · El repartidor entra en <code>/repartidor</code> desde su celular con este correo y contraseña.
+                        </span>
+                    </div>
+
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small fw-bold" for="accesoRepartidor">Repartidor</label>
+                        <select id="accesoRepartidor" name="repartidor" class="form-select form-select-sm" required></select>
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold" for="accesoCorreo">Correo</label>
+                        <input id="accesoCorreo" name="correo" type="email" class="form-control form-control-sm" required autocomplete="off">
+                    </div>
+
+                    <div class="col-8 col-md-3">
+                        <label class="form-label small fw-bold" for="accesoPassword">Contraseña</label>
+                        <input id="accesoPassword" name="password" type="password" class="form-control form-control-sm" minlength="6" required autocomplete="new-password">
+                    </div>
+
+                    <div class="col-4 col-md-2">
+                        <button type="submit" class="btn btn-sm btn-outline-dark w-100">Guardar acceso</button>
+                    </div>
+
+                </form>
+
                 <div id="listaRepartidores">
                     <p class="text-secondary">Cargando...</p>
                 </div>

@@ -1,4 +1,5 @@
 import os
+import time
 from functools import wraps
 
 import jwt
@@ -11,6 +12,39 @@ from db import get_connection
 load_dotenv()
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+
+# Datos del usuario de la sesion por unos segundos: evita consultar la
+# BD en cada peticion. Un cambio de rol o una desactivacion se aplica
+# como maximo despues de este tiempo.
+CACHE_USUARIO_SEGUNDOS = 60
+_CACHE_USUARIOS = {}
+
+
+def _buscar_usuario(usuario_id):
+
+    guardado = _CACHE_USUARIOS.get(usuario_id)
+
+    if guardado and time.monotonic() - guardado[0] < CACHE_USUARIO_SEGUNDOS:
+        return guardado[1]
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    id,
+                    nombre_completo,
+                    correo,
+                    rol,
+                    activo
+                FROM usuarios
+                WHERE id = %s;
+            """, (usuario_id,))
+
+            usuario = cur.fetchone()
+
+    _CACHE_USUARIOS[usuario_id] = (time.monotonic(), usuario)
+
+    return usuario
 
 
 def token_required(func):
@@ -36,20 +70,7 @@ def token_required(func):
 
             usuario_id = int(payload["sub"])
 
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT
-                            id,
-                            nombre_completo,
-                            correo,
-                            rol,
-                            activo
-                        FROM usuarios
-                        WHERE id = %s;
-                    """, (usuario_id,))
-
-                    usuario = cur.fetchone()
+            usuario = _buscar_usuario(usuario_id)
 
             if not usuario:
                 return jsonify({

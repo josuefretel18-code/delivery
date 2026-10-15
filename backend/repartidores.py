@@ -18,6 +18,9 @@ from db import get_connection
 from ml.variables import repartidores_disponibles
 
 
+# Correo con el que se crea un repartidor sin acceso al panel
+DOMINIO_INTERNO = "@repartidores.kimbos"
+
 # Estados en los que un pedido ocupa a su repartidor
 ESTADOS_ACTIVOS = ("ASIGNADO", "RECOGIDO", "EN_RUTA")
 
@@ -106,6 +109,7 @@ def listar_repartidores(solo_activos=False):
                     r.placa,
                     r.activo,
                     r.en_turno,
+                    u.correo,
                     COUNT(p.id) FILTER (
                         WHERE e.codigo = ANY(%s)
                     ),
@@ -122,7 +126,7 @@ def listar_repartidores(solo_activos=False):
                 LEFT JOIN estados_pedido e
                     ON e.id = p.estado_id
                 {filtro}
-                GROUP BY r.id, u.nombre_completo, u.telefono
+                GROUP BY r.id, u.nombre_completo, u.telefono, u.correo
                 ORDER BY r.activo DESC, r.en_turno DESC, u.nombre_completo;
             """, (list(ESTADOS_ACTIVOS),))
 
@@ -138,8 +142,10 @@ def listar_repartidores(solo_activos=False):
             "placa": fila[5],
             "activo": fila[6],
             "en_turno": fila[7],
-            "pedidos_activos": fila[8],
-            "entregas_hoy": fila[9],
+            # Correo interno = aun sin acceso al panel del repartidor
+            "correo_acceso": None if fila[8].endswith(DOMINIO_INTERNO) else fila[8],
+            "pedidos_activos": fila[9],
+            "entregas_hoy": fila[10],
         }
         for fila in filas
     ]

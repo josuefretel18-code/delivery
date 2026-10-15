@@ -4,7 +4,7 @@ from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from db import probar_conexion
+from db import probar_conexion, usar_pool
 from backend.decorators import roles_required
 from backend.auth import auth_bp
 from backend.routes.pedidos import pedidos_bp
@@ -14,10 +14,15 @@ from backend.routes.asistente import asistente_bp
 from backend.routes.automatizacion import automatizacion_bp
 from backend.routes.repartidores import repartidores_bp
 from backend.routes.dashboard import dashboard_bp
+from backend.routes.repartidor_panel import repartidor_bp
 from backend.repartidores import asegurar_columna_turno
 
 
 load_dotenv()
+
+# Conexiones a la BD reutilizables entre peticiones (mucho mas rapido
+# que abrir una conexion nueva en cada consulta).
+usar_pool()
 
 
 app = Flask(
@@ -36,6 +41,7 @@ app.register_blueprint(asistente_bp)
 app.register_blueprint(automatizacion_bp)
 app.register_blueprint(repartidores_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(repartidor_bp)
 
 
 # Columnas de repartidores (turno y espera): se aplican al arrancar, no
@@ -49,12 +55,24 @@ except Exception as error:
 def inicio():
     return render_template(
         "index.html",
-        maps_api_key=os.getenv("MAPS_API_KEY", "")
+        maps_api_key=os.getenv("MAPS_API_KEY", ""),
+        # Horario de atencion (TIENDA_HORARIO); si no esta, no se muestra
+        horario=os.getenv("TIENDA_HORARIO", "").strip()
     )
+
+
+@app.get("/acceso")
+def acceso_personal():
+    return render_template("acceso.html")
 
 @app.get("/admin")
 def panel_admin():
     return render_template("admin.html")
+
+
+@app.get("/repartidor")
+def panel_repartidor():
+    return render_template("repartidor.html")
 
 
 @app.get("/api/health")

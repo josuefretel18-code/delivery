@@ -17,7 +17,7 @@ document.addEventListener(
             "btnActualizarPedidos"
         ).addEventListener(
             "click",
-            cargarPedidosAdmin
+            () => cargarPedidosAdmin()
         );
 
         document.getElementById(
@@ -338,7 +338,7 @@ function mostrarPanelAdmin() {
    PEDIDOS
 ======================================================== */
 
-async function cargarPedidosAdmin() {
+async function cargarPedidosAdmin(silencioso = false) {
 
     const token =
         localStorage.getItem(
@@ -364,21 +364,27 @@ async function cargarPedidosAdmin() {
         );
 
 
-    cargando.classList.remove(
-        "d-none"
-    );
+    // En la actualizacion automatica no se vacia la lista (sin parpadeo)
+    if (!silencioso) {
+
+        cargando.classList.remove(
+            "d-none"
+        );
 
 
-    lista.innerHTML = "";
+        lista.innerHTML = "";
 
 
-    sinPedidos.classList.add(
-        "d-none"
-    );
+        sinPedidos.classList.add(
+            "d-none"
+        );
+    }
 
 
-    // Repartidores para el selector de asignacion
-    await cargarRepartidoresAdmin();
+    // Repartidores (para el selector de asignacion) y pedidos se
+    // piden al mismo tiempo, no uno despues del otro.
+    const repartidoresListos =
+        cargarRepartidoresAdmin();
 
 
     try {
@@ -397,6 +403,9 @@ async function cargarPedidosAdmin() {
 
         const datos =
             await respuesta.json();
+
+
+        await repartidoresListos;
 
 
         cargando.classList.add(
@@ -1633,7 +1642,9 @@ function renderizarPedidosAdmin(pedidos) {
 
 
                     ${
-                        accion.siguienteEstado
+                        seguimientoEntrega(pedido)
+                            ? seguimientoEntrega(pedido)
+                            : accion.siguienteEstado
                             ? `
                                 <button
                                     class="btn-siguiente"
@@ -3069,6 +3080,16 @@ function renderizarRepartidoresModal() {
         return;
     }
 
+    // Selector del formulario de acceso
+    const selectorAcceso = document.getElementById("accesoRepartidor");
+
+    if (selectorAcceso) {
+        selectorAcceso.innerHTML = repartidoresAdmin
+            .filter((r) => r.activo)
+            .map((r) => `<option value="${r.id}">${escaparHtmlAdmin(r.nombre)} (${escaparHtmlAdmin(r.codigo)})</option>`)
+            .join("");
+    }
+
     const esAdmin = usuarioAdmin && usuarioAdmin.rol === "ADMIN";
 
     if (!repartidoresAdmin.length) {
@@ -3090,7 +3111,7 @@ function renderizarRepartidoresModal() {
                 <thead>
                     <tr>
                         <th>Código</th><th>Nombre</th><th>Teléfono</th><th>Vehículo</th>
-                        <th>En ruta</th><th>Entregas hoy</th><th>En turno</th>
+                        <th>Acceso al panel</th><th>En ruta</th><th>Entregas hoy</th><th>En turno</th>
                         ${esAdmin ? "<th>Activo</th>" : ""}
                     </tr>
                 </thead>
@@ -3101,6 +3122,9 @@ function renderizarRepartidoresModal() {
                             <td><strong>${escaparHtmlAdmin(r.nombre)}</strong></td>
                             <td>${escaparHtmlAdmin(r.telefono || "-")}</td>
                             <td>${VEHICULOS_REPARTIDOR[r.tipo_vehiculo] || r.tipo_vehiculo} ${escaparHtmlAdmin(r.placa || "")}</td>
+                            <td>${r.correo_acceso
+                                ? `✅ <small>${escaparHtmlAdmin(r.correo_acceso)}</small>`
+                                : `<span class="text-secondary small">Sin acceso</span>`}</td>
                             <td>${r.pedidos_activos}</td>
                             <td>${r.entregas_hoy}</td>
                             <td>
@@ -3226,4 +3250,155 @@ document.addEventListener("DOMContentLoaded", () => {
     if (formulario) {
         formulario.addEventListener("submit", registrarRepartidor);
     }
+
+    const formularioAcceso = document.getElementById("formAccesoRepartidor");
+
+    if (modal && formularioAcceso) {
+        modal.addEventListener("show.bs.modal", () => {
+            formularioAcceso.classList.toggle(
+                "d-none",
+                !(usuarioAdmin && usuarioAdmin.rol === "ADMIN")
+            );
+        });
+
+        formularioAcceso.addEventListener("submit", darAccesoRepartidor);
+    }
 });
+
+
+async function darAccesoRepartidor(evento) {
+
+    evento.preventDefault();
+
+    const formulario = evento.target;
+    const boton = formulario.querySelector("button[type=submit]");
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch(`/api/repartidores/${formulario.repartidor.value}/acceso`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            },
+            body: JSON.stringify({
+                correo: formulario.correo.value,
+                password: formulario.password.value
+            })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo guardar el acceso.");
+        }
+
+        formulario.correo.value = "";
+        formulario.password.value = "";
+
+        alert(datos.mensaje);
+
+        await cargarRepartidoresAdmin();
+        renderizarRepartidoresModal();
+
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+
+
+/* ========================================================
+   SEGUIMIENTO DE LA ENTREGA
+   Con repartidor asignado, la entrega la marca él desde su
+   panel (/repartidor). El admin ve el avance y el resultado.
+======================================================== */
+
+function minutosDesde(fechaIso) {
+
+    if (!fechaIso) {
+        return null;
+    }
+
+    return Math.max(Math.round((Date.now() - new Date(fechaIso).getTime()) / 60000), 0);
+}
+
+
+function seguimientoEntrega(pedido) {
+
+    const repartidor = pedido.repartidor;
+    const estado = pedido.estado?.codigo;
+
+    if (!repartidor || (estado !== "EN_RUTA" && estado !== "ENTREGADO")) {
+        return "";
+    }
+
+    const nombre = escaparHtmlAdmin(repartidor.nombre);
+
+    if (estado === "EN_RUTA") {
+
+        const transcurrido = minutosDesde(pedido.fecha_pedido);
+        const prometido = pedido.tiempo_estimado_total_min;
+        const restantes = prometido !== null && transcurrido !== null ? prometido - transcurrido : null;
+
+        let tiempo = "";
+
+        if (restantes !== null) {
+            tiempo = restantes >= 0
+                ? `<span class="seg-tiempo ${restantes <= 5 ? "seg-justo" : "seg-ok"}">${restantes <= 5 ? "⚠️" : "⏱️"} quedan ${restantes} min</span>`
+                : `<span class="seg-tiempo seg-tarde">⛔ ${Math.abs(restantes)} min tarde</span>`;
+        }
+
+        return `
+            <div class="seguimiento-entrega">
+                <div class="seg-titulo">🛵 En camino con ${nombre}</div>
+                <div class="seg-detalle">
+                    Pedido hace ${transcurrido ?? "--"} min · prometido ${prometido ?? "--"} min ${tiempo}
+                </div>
+                <div class="seg-nota">${nombre} marcará la entrega desde su panel.</div>
+            </div>
+        `;
+    }
+
+    const hora = pedido.fecha_entrega
+        ? new Date(pedido.fecha_entrega).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })
+        : "--";
+
+    const real = pedido.resultado_real?.duracion_real_min;
+    const conRetraso = pedido.resultado_real?.retraso;
+
+    return `
+        <div class="seguimiento-entrega seg-entregado">
+            <div class="seg-titulo">✅ Entregado por ${nombre} a las ${hora}</div>
+            <div class="seg-detalle">
+                ${real !== undefined && real !== null ? `Tardó ${real} min · ` : ""}
+                ${conRetraso === true
+                    ? `<span class="seg-tiempo seg-tarde">⛔ con retraso</span>`
+                    : conRetraso === false
+                    ? `<span class="seg-tiempo seg-ok">✅ a tiempo</span>`
+                    : ""}
+            </div>
+        </div>
+    `;
+}
+
+
+/* El panel se actualiza solo cada 30 s para ver las entregas que
+   marcan los repartidores (no mientras hay una ventana abierta). */
+setInterval(() => {
+
+    if (
+        localStorage.getItem("kimbos_admin_token") &&
+        !document.querySelector(".modal.show") &&
+        document.visibilityState === "visible" &&
+        !document.activeElement?.closest?.("#listaPedidosAdmin") &&
+        typeof cargarPedidosAdmin === "function"
+    ) {
+        cargarPedidosAdmin(true);
+    }
+
+}, 30000);

@@ -702,3 +702,66 @@ body {
     color: #6b3a00;
     font-size: 0.88rem;
 }
+
+
+/* Pie de pagina */
+
+.pie-kimbos {
+    margin-top: 48px;
+    padding: 40px 0 20px;
+    background: #171717;
+    color: #d9d9d9;
+}
+
+.pie-marca {
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+    margin-bottom: 8px;
+}
+
+.pie-texto {
+    font-size: 0.9rem;
+    color: #bdbdbd;
+    max-width: 320px;
+}
+
+.pie-titulo {
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 10px;
+}
+
+.pie-lista {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.pie-lista li {
+    margin-bottom: 6px;
+}
+
+.pie-legal {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1px solid #2e2e2e;
+    font-size: 0.8rem;
+    color: #9a9a9a;
+}
+
+.pie-acceso {
+    color: #9a9a9a;
+    text-decoration: none;
+}
+
+.pie-acceso:hover {
+    color: #ff8a33;
+    text-decoration: underline;
+}

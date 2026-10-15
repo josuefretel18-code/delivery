@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 from db import get_connection
 from backend.decorators import roles_required
 from backend.repartidores import (
+    DOMINIO_INTERNO,
     asegurar_columna_turno,
     listar_repartidores,
     sugerir_repartidor,
@@ -73,7 +74,7 @@ def crear_repartidor():
                 RETURNING id;
             """, (
                 nombre,
-                f"{codigo.lower()}.{secrets.token_hex(3)}@repartidores.kimbos",
+                f"{codigo.lower()}.{secrets.token_hex(3)}{DOMINIO_INTERNO}",
                 generate_password_hash(secrets.token_urlsafe(16)),
                 telefono,
             ))
@@ -185,3 +186,58 @@ def actualizar_repartidor(repartidor_id):
         conn.commit()
 
     return jsonify({"ok": True, "mensaje": "Repartidor actualizado"})
+
+
+@repartidores_bp.patch("/<int:repartidor_id>/acceso")
+@roles_required("ADMIN")
+def dar_acceso_repartidor(repartidor_id):
+    """Correo y contrasena para que el repartidor entre a /repartidor."""
+
+    datos = request.get_json(silent=True) or {}
+
+    correo = str(datos.get("correo", "")).strip().lower()
+    password = str(datos.get("password", ""))
+
+    if "@" not in correo or "." not in correo.split("@")[-1] or correo.endswith(DOMINIO_INTERNO):
+        return jsonify({"ok": False, "mensaje": "Ingresa un correo válido"}), 400
+
+    if len(password) < 6:
+        return jsonify({"ok": False, "mensaje": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute(
+                "SELECT usuario_id FROM repartidores WHERE id = %s;",
+                (repartidor_id,),
+            )
+            fila = cur.fetchone()
+
+            if not fila:
+                return jsonify({"ok": False, "mensaje": "Repartidor no encontrado"}), 404
+
+            cur.execute(
+                "SELECT 1 FROM usuarios WHERE correo = %s AND id <> %s;",
+                (correo, fila[0]),
+            )
+
+            if cur.fetchone():
+                return jsonify({"ok": False, "mensaje": "Ese correo ya está en uso"}), 409
+
+            cur.execute("""
+                UPDATE usuarios
+                SET correo = %s, password_hash = %s
+                WHERE id = %s;
+            """, (correo, generate_password_hash(password), fila[0]))
+
+            cur.execute("""
+                INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
+                VALUES (%s, 'ACCESO_REPARTIDOR', 'repartidores', %s, %s);
+            """, (g.usuario["id"], repartidor_id, f"Acceso al panel: {correo}"))
+
+        conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "mensaje": f"Acceso listo: el repartidor entra en /repartidor con {correo}"
+    })

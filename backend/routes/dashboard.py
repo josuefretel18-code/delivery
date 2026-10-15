@@ -168,18 +168,28 @@ def obtener_dashboard():
                 for fila in cur.fetchall()
             ]
 
-            # Pedidos por hora del dia
+            # Pedidos y ventas por hora del dia
             cur.execute(f"""
                 SELECT
                     EXTRACT(HOUR FROM p.fecha_pedido AT TIME ZONE '{ZONA}')::int,
-                    COUNT(*)
+                    COUNT(*),
+                    COALESCE(SUM(p.total) FILTER (WHERE e.codigo <> 'CANCELADO'), 0)
                 FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
                 WHERE {FILTRO}
                 GROUP BY 1;
             """, rango)
 
-            horas = dict(cur.fetchall())
-            por_hora = [{"hora": h, "pedidos": horas.get(h, 0)} for h in range(24)]
+            horas = {fila[0]: (fila[1], fila[2]) for fila in cur.fetchall()}
+
+            por_hora = [
+                {
+                    "hora": h,
+                    "pedidos": horas.get(h, (0, 0))[0],
+                    "ventas_soles": _numero(horas.get(h, (0, 0))[1], 2),
+                }
+                for h in range(24)
+            ]
 
             # Productos mas vendidos
             cur.execute(f"""

@@ -3035,3 +3035,41 @@ async function mostrarEsperaRepartidor(
         console.error(error);
     }
 }
+
+
+
+/* ========================================================
+   PIE DE PAGINA
+   Datos reales de la sede activa (dirección y teléfono).
+======================================================== */
+
+document.addEventListener("DOMContentLoaded", async () => {
+
+    const anio = document.getElementById("pieAnio");
+
+    if (anio) {
+        anio.textContent = new Date().getFullYear();
+    }
+
+    try {
+
+        const respuesta = await fetch("/api/sedes/activa");
+        const datos = await respuesta.json();
+
+        if (!datos.ok) {
+            return;
+        }
+
+        document.getElementById("pieSede").textContent =
+            `📍 ${datos.sede.nombre}: ${datos.sede.direccion}`;
+
+        if (datos.sede.telefono) {
+            const telefono = document.getElementById("pieTelefono");
+            telefono.textContent = `📞 ${datos.sede.telefono}`;
+            telefono.classList.remove("d-none");
+        }
+
+    } catch (error) {
+        console.error(error);
+    }
+});

@@ -864,3 +864,97 @@ body {
     border: 1px solid #e1e0d9;
     font-style: italic;
 }
+
+/* Dashboard: lectura rapida */
+
+.dash-resumen {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: #f4f8fd;
+    border: 1px solid #cde2fb;
+    font-size: 0.95rem;
+}
+
+.dash-bloque {
+    margin-bottom: 24px;
+}
+
+.dash-bloque-cab h5 {
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+.dash-bloque-cab p {
+    font-size: 0.85rem;
+    color: #52514e;
+    margin-bottom: 10px;
+}
+
+.dash-conclusion {
+    font-size: 0.85rem;
+    color: #0b0b0b;
+    margin: -4px 0 10px;
+}
+
+.dash-detalle summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #2a78d6;
+}
+
+
+/* Acceso al panel del repartidor */
+
+.acceso-repartidor {
+    padding: 12px;
+    border-radius: 12px;
+    background: #f7f7f7;
+    border: 1px solid #ececec;
+}
+
+
+/* Seguimiento de la entrega (la marca el repartidor) */
+
+.seguimiento-entrega {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f4f8fd;
+    border: 1px solid #cde2fb;
+    font-size: 0.9rem;
+}
+
+.seg-entregado {
+    background: #f1faf1;
+    border-color: #bfe5bf;
+}
+
+.seg-titulo {
+    font-weight: 700;
+}
+
+.seg-detalle {
+    margin-top: 4px;
+    color: #52514e;
+}
+
+.seg-nota {
+    margin-top: 4px;
+    font-size: 0.78rem;
+    color: #898781;
+}
+
+.seg-tiempo {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0b0b0b;
+}
+
+.seg-ok { background: #e9f7e9; border-color: #0ca30c; }
+.seg-justo { background: #fff6dd; border-color: #fab219; }
+.seg-tarde { background: #fdeaea; border-color: #d03b3b; }

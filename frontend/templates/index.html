@@ -205,6 +205,56 @@
 
 
     <!-- ==================================================
+         PIE DE PAGINA
+    =================================================== -->
+
+    <footer class="pie-kimbos">
+
+        <div class="container">
+
+            <div class="row g-4">
+
+                <div class="col-12 col-md-4">
+                    <div class="pie-marca">KIMBOS</div>
+                    <p class="pie-texto">
+                        Comida rápida con delivery en Cerro de Pasco.
+                        Haz tu pedido en línea y síguelo hasta tu puerta.
+                    </p>
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-4">
+                    <div class="pie-titulo">Visítanos</div>
+                    <ul class="pie-lista">
+                        <li id="pieSede">📍 --</li>
+                        <li id="pieTelefono" class="d-none"></li>
+                        {% if horario %}
+                        <li>🕒 {{ horario }}</li>
+                        {% endif %}
+                    </ul>
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-4">
+                    <div class="pie-titulo">Medios de pago</div>
+                    <ul class="pie-lista">
+                        <li>💵 Efectivo contra entrega</li>
+                        <li>📱 Yape y Plin</li>
+                        <li>🛵 Delivery: S/ 3.00 + S/ 1.20 por km</li>
+                    </ul>
+                </div>
+
+            </div>
+
+            <div class="pie-legal">
+                <span>© <span id="pieAnio"></span> Kimbos Delivery. Todos los derechos reservados.</span>
+                <a href="/acceso" class="pie-acceso">Acceso para personal</a>
+            </div>
+
+        </div>
+
+    </footer>
+
+
+    <!-- ==================================================
          CARRITO
     =================================================== -->
 

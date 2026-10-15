@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Kimbos | Acceso para personal</title>
+
+    <!-- No aparece en buscadores -->
+    <meta name="robots" content="noindex, nofollow">
+
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+    >
+
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #171717;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            padding: 16px;
+        }
+
+        .acceso-tarjeta {
+            width: 100%;
+            max-width: 400px;
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 28px 24px;
+        }
+
+        .acceso-marca {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+        }
+
+        .acceso-marca span {
+            color: #ff6b00;
+        }
+
+        .acceso-roles {
+            display: flex;
+            gap: 8px;
+            margin: 14px 0 18px;
+            font-size: 0.8rem;
+            color: #52514e;
+        }
+
+        .acceso-roles div {
+            flex: 1;
+            padding: 8px;
+            border-radius: 10px;
+            background: #f5f6f7;
+            text-align: center;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <main class="acceso-tarjeta">
+
+        <div class="acceso-marca">KIMBOS <span>·</span> Personal</div>
+
+        <p class="text-secondary mb-0">
+            Ingreso para administradores, operadores y repartidores.
+        </p>
+
+        <div class="acceso-roles">
+            <div>🗂️ Administración<br>y operación</div>
+            <div>🛵 Repartidores</div>
+        </div>
+
+        <form id="formAcceso">
+
+            <label class="form-label fw-semibold" for="correo">Correo</label>
+            <input
+                id="correo"
+                type="email"
+                class="form-control form-control-lg mb-3"
+                autocomplete="username"
+                required
+            >
+
+            <label class="form-label fw-semibold" for="password">Contraseña</label>
+            <input
+                id="password"
+                type="password"
+                class="form-control form-control-lg mb-3"
+                autocomplete="current-password"
+                required
+            >
+
+            <div id="mensajeAcceso" class="alert py-2 d-none"></div>
+
+            <button id="btnIngresar" class="btn btn-dark btn-lg w-100" type="submit">
+                Ingresar
+            </button>
+
+        </form>
+
+        <p class="text-center small mt-3 mb-0">
+            <a href="/" class="text-secondary">← Volver a la tienda</a>
+        </p>
+
+    </main>
+
+    <script>
+        /* Un solo ingreso para el personal: el sistema detecta el rol
+           de la cuenta y lleva a cada uno a su panel. */
+
+        const DESTINOS = {
+            ADMIN: ["kimbos_admin_token", "/admin"],
+            OPERADOR: ["kimbos_admin_token", "/admin"],
+            REPARTIDOR: ["kimbos_repartidor_token", "/repartidor"]
+        };
+
+        function mostrarMensaje(texto, tipo) {
+            const caja = document.getElementById("mensajeAcceso");
+            caja.className = `alert alert-${tipo} py-2`;
+            caja.innerHTML = texto;
+        }
+
+        document.getElementById("formAcceso").addEventListener("submit", async (evento) => {
+
+            evento.preventDefault();
+
+            const boton = document.getElementById("btnIngresar");
+            boton.disabled = true;
+
+            try {
+
+                const respuesta = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        correo: document.getElementById("correo").value.trim(),
+                        password: document.getElementById("password").value
+                    })
+                });
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok || !datos.ok) {
+                    throw new Error(datos.mensaje || "Correo o contraseña incorrectos.");
+                }
+
+                const destino = DESTINOS[datos.usuario.rol];
+
+                if (!destino) {
+                    mostrarMensaje(
+                        'Esta página es solo para el personal. Para hacer pedidos, ingresa desde <a href="/">la tienda</a>.',
+                        "warning"
+                    );
+                    return;
+                }
+
+                localStorage.setItem(destino[0], datos.token);
+                window.location.href = destino[1];
+
+            } catch (error) {
+                mostrarMensaje(error.message, "danger");
+            } finally {
+                boton.disabled = false;
+            }
+        });
+    </script>
+
+</body>
+
+</html>
