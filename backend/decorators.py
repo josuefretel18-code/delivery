@@ -77,27 +77,6 @@ def token_required(func):
 
             usuario_id = int(payload["sub"])
 
-            usuario = _buscar_usuario(usuario_id)
-
-            if not usuario:
-                return jsonify({
-                    "ok": False,
-                    "mensaje": "Usuario no encontrado"
-                }), 401
-
-            if not usuario[4]:
-                return jsonify({
-                    "ok": False,
-                    "mensaje": "Usuario inactivo"
-                }), 403
-
-            g.usuario = {
-                "id": usuario[0],
-                "nombre": usuario[1],
-                "correo": usuario[2],
-                "rol": usuario[3]
-            }
-
         except jwt.ExpiredSignatureError:
             return jsonify({
                 "ok": False,
@@ -109,6 +88,38 @@ def token_required(func):
                 "ok": False,
                 "mensaje": "Token inválido"
             }), 401
+
+        # Un fallo de la base de datos NO es un token invalido: se avisa
+        # aparte (503) para no cerrar la sesion de quien esta bien.
+        try:
+            usuario = _buscar_usuario(usuario_id)
+
+        except Exception as error:
+            print(f"[BD] Verificar sesion: {type(error).__name__}: {error}", flush=True)
+
+            return jsonify({
+                "ok": False,
+                "mensaje": "No se pudo conectar con la base de datos. Intenta de nuevo en unos segundos."
+            }), 503
+
+        if not usuario:
+            return jsonify({
+                "ok": False,
+                "mensaje": "Usuario no encontrado"
+            }), 401
+
+        if not usuario[4]:
+            return jsonify({
+                "ok": False,
+                "mensaje": "Usuario inactivo"
+            }), 403
+
+        g.usuario = {
+            "id": usuario[0],
+            "nombre": usuario[1],
+            "correo": usuario[2],
+            "rol": usuario[3]
+        }
 
         return func(*args, **kwargs)
 

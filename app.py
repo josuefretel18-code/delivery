@@ -25,7 +25,7 @@ load_dotenv()
 
 # Conexiones a la BD reutilizables entre peticiones (mucho mas rapido
 # que abrir una conexion nueva en cada consulta).
-usar_pool()
+usar_pool(maximo=10)
 
 
 app = Flask(
