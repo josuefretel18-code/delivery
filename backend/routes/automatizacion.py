@@ -102,11 +102,17 @@ def generar_reporte_manual():
     try:
         reporte = generar_reporte_diario(fecha, origen="MANUAL")
     except Exception as error:
-        print(f"[AGENTES] Reporte manual: {error}", flush=True)
+        print(f"[AGENTES] Reporte manual: {type(error).__name__}: {error}", flush=True)
 
+        # RuntimeError = aviso propio del sistema (sin clave del LLM o
+        # presupuesto alcanzado); otros errores no se muestran.
         return jsonify({
             "ok": False,
-            "mensaje": f"No se pudo generar el reporte: {error}"
+            "mensaje": (
+                f"No se pudo generar el reporte: {error}"
+                if isinstance(error, RuntimeError)
+                else "No se pudo generar el reporte. Inténtalo en unos minutos."
+            )
         }), 500
 
     return jsonify({"ok": True, "reporte": reporte})
@@ -119,7 +125,9 @@ def ver_reportes():
     try:
         return jsonify({"ok": True, "reportes": listar_reportes(10)})
     except Exception as error:
+        print(f"[AGENTES] Leer reportes: {type(error).__name__}: {error}", flush=True)
+
         return jsonify({
             "ok": False,
-            "mensaje": f"No se pudieron leer los reportes: {error}"
+            "mensaje": "No se pudieron leer los reportes. Inténtalo en unos minutos."
         }), 500

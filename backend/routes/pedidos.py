@@ -1,3 +1,5 @@
+import math
+import os
 import secrets
 from datetime import datetime, timezone
 
@@ -54,6 +56,40 @@ def obtener_estado_id(codigo_estado):
         )
 
     return estado[0]
+
+# Radio maximo de reparto (km) y velocidad maxima para validar rutas
+RADIO_COBERTURA_POR_DEFECTO_KM = 10
+VELOCIDAD_MAXIMA_KMH = 50
+
+
+def radio_cobertura_km():
+
+    try:
+        return float(os.getenv(
+            "RADIO_COBERTURA_KM",
+            RADIO_COBERTURA_POR_DEFECTO_KM
+        ))
+    except ValueError:
+        return float(RADIO_COBERTURA_POR_DEFECTO_KM)
+
+
+def distancia_linea_recta_km(lat1, lon1, lat2, lon2):
+    """Distancia en linea recta (formula de Haversine)."""
+
+    radio_tierra_km = 6371.0
+
+    fi1 = math.radians(lat1)
+    fi2 = math.radians(lat2)
+    delta_fi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_fi / 2) ** 2
+        + math.cos(fi1) * math.cos(fi2) * math.sin(delta_lambda / 2) ** 2
+    )
+
+    return 2 * radio_tierra_km * math.asin(math.sqrt(a))
+
 
 def obtener_sede_activa():
     with get_connection() as conn:
@@ -231,6 +267,59 @@ def crear_pedido():
             "ok": False,
             "mensaje": "No existe una sede activa"
         }), 409
+
+
+    # =====================================================
+    # VALIDAR LA DISTANCIA EN EL SERVIDOR
+    #
+    # La distancia de la ruta la calcula el navegador (Google
+    # Maps) y define el costo del delivery: no se confia en ella.
+    # Se compara con la distancia en linea recta entre la sede y
+    # el destino (una ruta nunca es mas corta) y se aplica el
+    # radio maximo de cobertura.
+    # =====================================================
+
+    distancia_recta_km = distancia_linea_recta_km(
+        float(sede["latitud"]),
+        float(sede["longitud"]),
+        latitud_destino,
+        longitud_destino
+    )
+
+    radio_maximo_km = radio_cobertura_km()
+
+    if distancia_recta_km > radio_maximo_km:
+
+        return jsonify({
+            "ok": False,
+            "mensaje": (
+                f"Tu dirección está fuera de nuestra zona de "
+                f"reparto (máximo {radio_maximo_km:g} km desde "
+                f"la tienda)."
+            )
+        }), 400
+
+    # Ruta menor que la linea recta = dato alterado: se corrige.
+    if distancia_km < Decimal(str(round(distancia_recta_km, 2))):
+
+        print(
+            f"[SEGURIDAD] Distancia corregida para el usuario "
+            f"{g.usuario['id']}: enviada {distancia_km} km, "
+            f"linea recta {distancia_recta_km:.2f} km",
+            flush=True
+        )
+
+        distancia_km = Decimal(
+            str(round(distancia_recta_km, 2))
+        )
+
+    # Tiempo de ruta minimo razonable (como maximo ~50 km/h)
+    duracion_minima_min = math.ceil(
+        float(distancia_km) * 60 / VELOCIDAD_MAXIMA_KMH
+    )
+
+    if duracion_estimada_min < duracion_minima_min:
+        duracion_estimada_min = duracion_minima_min
 
 
     codigo = generar_codigo_pedido()
@@ -965,10 +1054,15 @@ def crear_pedido():
 
     except Exception as error:
 
+        # El detalle queda solo en el registro del servidor
+        print(
+            f"[ERROR] Crear pedido: {type(error).__name__}: {error}",
+            flush=True
+        )
+
         return jsonify({
             "ok": False,
-            "mensaje": "No se pudo registrar el pedido",
-            "detalle": str(error)
+            "mensaje": "No se pudo registrar el pedido. Inténtalo de nuevo."
         }), 500
 
 

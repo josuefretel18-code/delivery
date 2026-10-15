@@ -31,7 +31,21 @@ app = Flask(
     static_folder="frontend/static"
 )
 
-CORS(app)
+# CORS: solo el dominio de la tienda y el entorno local pueden llamar a
+# la API desde un navegador. (Cloud Scheduler llama servidor a servidor:
+# no le afecta.) Se puede cambiar con CORS_ORIGENES, separados por coma.
+ORIGENES_PERMITIDOS = [
+    origen.strip()
+    for origen in os.getenv(
+        "CORS_ORIGENES",
+        "https://kimbos-delivery.onrender.com,"
+        "http://localhost:5000,"
+        "http://127.0.0.1:5000"
+    ).split(",")
+    if origen.strip()
+]
+
+CORS(app, origins=ORIGENES_PERMITIDOS)
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(pedidos_bp)

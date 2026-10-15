@@ -311,10 +311,15 @@ def crear_producto():
 
     except Exception as error:
 
+        # El detalle queda solo en el registro del servidor
+        print(
+            f"[ERROR] Crear producto: {type(error).__name__}: {error}",
+            flush=True
+        )
+
         return jsonify({
             "ok": False,
-            "mensaje": "No se pudo crear el producto",
-            "detalle": str(error)
+            "mensaje": "No se pudo crear el producto. Revisa los datos e inténtalo de nuevo."
         }), 500
 
 
@@ -634,10 +639,14 @@ def editar_producto(producto_id):
 
     except Exception as error:
 
+        # El detalle queda solo en el registro del servidor
+        print(
+            f"[ERROR] Editar producto: {type(error).__name__}: {error}",
+            flush=True
+        )
+
         return jsonify({
             "ok": False,
             "mensaje":
-                "No se pudo actualizar el producto",
-            "detalle":
-                str(error)
+                "No se pudo actualizar el producto. Revisa los datos e inténtalo de nuevo."
         }), 500

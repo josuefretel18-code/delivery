@@ -57,6 +57,9 @@ services:
         value: "15"
       # Sistema multiagente: alerta de pedido en riesgo. Se dispara si
       # la probabilidad de retraso del modelo ML supera este umbral.
+      # Radio maximo de reparto (km) desde la sede
+      - key: RADIO_COBERTURA_KM
+        value: "10"
       - key: ALERTA_UMBRAL_RIESGO
         value: "0.4"
       - key: LLM_CORTE_AUTOMATIZACION_USD

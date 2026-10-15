@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -102,6 +104,86 @@ def registrar_cliente():
         }), 500
 
 
+# =========================================================
+# LIMITE DE INTENTOS DE INICIO DE SESION
+#
+# Tras 5 intentos fallidos se bloquea el ingreso por 1 minuto,
+# por correo (protege la cuenta) y por IP (evita probar muchas
+# cuentas desde el mismo equipo). En memoria del servidor.
+# =========================================================
+
+MAX_INTENTOS_FALLIDOS = 5
+BLOQUEO_SEGUNDOS = 60
+
+_INTENTOS = {}
+_CANDADO_INTENTOS = threading.Lock()
+
+
+def _ip_cliente():
+
+    # Render pasa la IP real del visitante en X-Forwarded-For
+    reenviada = request.headers.get("X-Forwarded-For", "")
+
+    return (reenviada.split(",")[0].strip() or request.remote_addr or "?")
+
+
+def _claves_intento(correo):
+
+    return (f"correo:{correo}", f"ip:{_ip_cliente()}")
+
+
+def _segundos_bloqueado(correo):
+
+    ahora = time.monotonic()
+
+    with _CANDADO_INTENTOS:
+        restantes = [
+            _INTENTOS[clave]["hasta"] - ahora
+            for clave in _claves_intento(correo)
+            if clave in _INTENTOS and _INTENTOS[clave].get("hasta", 0) > ahora
+        ]
+
+    return int(max(restantes) + 0.999) if restantes else 0
+
+
+def _registrar_fallo(correo):
+
+    ahora = time.monotonic()
+
+    with _CANDADO_INTENTOS:
+        for clave in _claves_intento(correo):
+
+            registro = _INTENTOS.setdefault(clave, {"fallos": 0, "hasta": 0})
+
+            # Un bloqueo ya vencido empieza de cero
+            if registro["hasta"] and registro["hasta"] <= ahora:
+                registro.update(fallos=0, hasta=0)
+
+            registro["fallos"] += 1
+
+            if registro["fallos"] >= MAX_INTENTOS_FALLIDOS:
+                registro.update(fallos=0, hasta=ahora + BLOQUEO_SEGUNDOS)
+                print(f"[SEGURIDAD] Ingreso bloqueado 1 min: {clave}", flush=True)
+
+
+def _limpiar_intentos(correo):
+
+    with _CANDADO_INTENTOS:
+        _INTENTOS.pop(f"correo:{correo}", None)
+
+
+def _respuesta_bloqueado(segundos):
+
+    return jsonify({
+        "ok": False,
+        "mensaje": (
+            f"Demasiados intentos fallidos. Espera {segundos} "
+            f"segundos e inténtalo de nuevo."
+        ),
+        "espera_segundos": segundos
+    }), 429
+
+
 @auth_bp.post("/login")
 def login():
 
@@ -121,6 +203,11 @@ def login():
             "mensaje": "Correo y contraseña son obligatorios"
         }), 400
 
+    bloqueo = _segundos_bloqueado(correo)
+
+    if bloqueo:
+        return _respuesta_bloqueado(bloqueo)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
 
@@ -138,20 +225,23 @@ def login():
 
             usuario = cur.fetchone()
 
-    if not usuario:
+    if not usuario or not check_password_hash(
+        usuario[3],
+        password
+    ):
+        _registrar_fallo(correo)
+
+        bloqueo = _segundos_bloqueado(correo)
+
+        if bloqueo:
+            return _respuesta_bloqueado(bloqueo)
+
         return jsonify({
             "ok": False,
             "mensaje": "Credenciales incorrectas"
         }), 401
 
-    if not check_password_hash(
-        usuario[3],
-        password
-    ):
-        return jsonify({
-            "ok": False,
-            "mensaje": "Credenciales incorrectas"
-        }), 401
+    _limpiar_intentos(correo)
 
     if not usuario[5]:
         return jsonify({
