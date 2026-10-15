@@ -1191,81 +1191,90 @@ def mis_pedidos():
 
             pedidos = []
 
+            ids = [fila[0] for fila in filas]
+
+            # Productos e historial de todos los pedidos en dos
+            # consultas (antes eran dos consultas por pedido y,
+            # con muchos pedidos, la lista tardaba varios segundos).
+
+            cur.execute("""
+                SELECT
+                    pedido_id,
+                    producto_id,
+                    nombre_producto,
+                    precio_unitario,
+                    cantidad,
+                    subtotal
+
+                FROM detalle_pedido
+
+                WHERE pedido_id = ANY(%s)
+
+                ORDER BY pedido_id, id;
+            """, (
+                ids,
+            ))
+
+            productos_por_pedido = {}
+
+            for producto in cur.fetchall():
+
+                productos_por_pedido.setdefault(
+                    producto[0],
+                    []
+                ).append({
+                    "producto_id": producto[1],
+                    "nombre": producto[2],
+                    "precio_unitario": float(producto[3]),
+                    "cantidad": producto[4],
+                    "subtotal": float(producto[5])
+                })
+
+            cur.execute("""
+                SELECT
+                    h.pedido_id,
+                    e.codigo,
+                    e.nombre,
+                    h.observacion,
+                    h.fecha
+
+                FROM historial_pedido h
+
+                JOIN estados_pedido e
+                    ON e.id = h.estado_id
+
+                WHERE h.pedido_id = ANY(%s)
+
+                ORDER BY h.pedido_id, h.fecha;
+            """, (
+                ids,
+            ))
+
+            historial_por_pedido = {}
+
+            for estado in cur.fetchall():
+
+                historial_por_pedido.setdefault(
+                    estado[0],
+                    []
+                ).append({
+                    "codigo": estado[1],
+                    "nombre": estado[2],
+                    "observacion": estado[3],
+                    "fecha": (
+                        estado[4].isoformat()
+                        if estado[4]
+                        else None
+                    )
+                })
+
             for fila in filas:
 
                 pedido_id = fila[0]
 
-                # =========================================
-                # PRODUCTOS
-                # =========================================
+                productos = productos_por_pedido.get(pedido_id, [])
 
-                cur.execute("""
-                    SELECT
-                        producto_id,
-                        nombre_producto,
-                        precio_unitario,
-                        cantidad,
-                        subtotal
-
-                    FROM detalle_pedido
-
-                    WHERE pedido_id = %s
-
-                    ORDER BY id;
-                """, (
-                    pedido_id,
-                ))
-
-                productos = []
-
-                for producto in cur.fetchall():
-
-                    productos.append({
-                        "producto_id": producto[0],
-                        "nombre": producto[1],
-                        "precio_unitario": float(producto[2]),
-                        "cantidad": producto[3],
-                        "subtotal": float(producto[4])
-                    })
-
-
-                # =========================================
-                # HISTORIAL
-                # =========================================
-
-                cur.execute("""
-                    SELECT
-                        e.codigo,
-                        e.nombre,
-                        h.observacion,
-                        h.fecha
-
-                    FROM historial_pedido h
-
-                    JOIN estados_pedido e
-                        ON e.id = h.estado_id
-
-                    WHERE h.pedido_id = %s
-
-                    ORDER BY h.fecha;
-                """, (
-                    pedido_id,
-                ))
-
-                historial = []
-
-                for estado in cur.fetchall():
-
-                    historial.append({
-                        "codigo": estado[0],
-                        "nombre": estado[1],
-                        "observacion": estado[2],
-                        "fecha": (
-                            estado[3].isoformat()
-                            if estado[3]
-                            else None
-                        )
-                    })
+                historial = historial_por_pedido.get(pedido_id, [])
 
 
                 pedidos.append({

@@ -1,6 +1,7 @@
 import os
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
+from werkzeug.exceptions import HTTPException
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -60,6 +61,39 @@ app.register_blueprint(repartidores_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(repartidor_bp)
 app.register_blueprint(personal_bp)
+
+
+# Las rutas /api siempre responden JSON, tambien cuando hay un error
+# (sin esto Flask devuelve una pagina HTML y el navegador muestra
+# "Unexpected token '<' ... is not valid JSON").
+@app.errorhandler(HTTPException)
+def error_http(error):
+
+    if not request.path.startswith("/api/"):
+        return error
+
+    return jsonify({
+        "ok": False,
+        "mensaje": (
+            "Recurso no encontrado." if error.code == 404
+            else "Operación no permitida." if error.code == 405
+            else "No se pudo procesar la solicitud."
+        )
+    }), error.code
+
+
+@app.errorhandler(Exception)
+def error_inesperado(error):
+
+    print(f"[ERROR] {request.method} {request.path}: {error!r}", flush=True)
+
+    if not request.path.startswith("/api/"):
+        return "Error interno del servidor", 500
+
+    return jsonify({
+        "ok": False,
+        "mensaje": "Ocurrió un error en el servidor. Intenta de nuevo en unos segundos."
+    }), 500
 
 
 # Columnas de repartidores (turno y espera): se aplican al arrancar, no

@@ -2547,9 +2547,35 @@ async function abrirMisPedidos() {
 
     modal.show();
 
-    await cargarMisPedidos();
+    // Si ya se cargaron antes con esta misma sesion, se muestran al
+    // instante y se actualizan por detras (sin el "Cargando...").
+    await cargarMisPedidos(
+        tokenMisPedidos === token
+    );
 
 }
+
+
+// Sesion con la que se cargo la lista actual de "Mis pedidos"
+let tokenMisPedidos = null;
+
+
+// Al entrar a la tienda con sesion, los pedidos se traen por detras
+// para que "Mis pedidos" abra sin esperar.
+document.addEventListener("DOMContentLoaded", () => {
+
+    setTimeout(() => {
+
+        if (
+            localStorage.getItem("kimbos_token") &&
+            tokenMisPedidos === null
+        ) {
+            cargarMisPedidos(true).catch(() => {});
+        }
+
+    }, 1500);
+
+});
 
 
 /* ========================================================
@@ -2632,6 +2658,11 @@ async function cargarMisPedidos(silencioso = false) {
             );
 
         }
+
+        tokenMisPedidos = token;
+
+        error.classList.add("d-none");
+        sinPedidos.classList.add("d-none");
 
         if (
             !datos.pedidos ||
