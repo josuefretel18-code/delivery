@@ -206,3 +206,9 @@ body {
     border: 1px dashed #d8d8d8;
     border-radius: 14px;
 }
+
+
+.rep-password summary {
+    cursor: pointer;
+    font-weight: 600;
+}

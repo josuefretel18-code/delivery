@@ -201,9 +201,14 @@ function tarjetaPedido(pedido) {
 
     const mapa = `https://www.google.com/maps/dir/?api=1&destination=${destino}&travelmode=driving`;
 
-    const cobrar = (pedido.metodo_pago || "").toUpperCase() === "EFECTIVO"
+    const metodo = (pedido.metodo_pago || "").toUpperCase();
+    const nombreMetodo = { YAPE: "Yape", PLIN: "Plin" }[metodo] || escapar(pedido.metodo_pago || "--");
+
+    const cobrar = metodo === "EFECTIVO"
         ? `💵 Cobrar <strong>S/ ${pedido.total_soles.toFixed(2)}</strong> en efectivo`
-        : `💳 Pago: ${escapar(pedido.metodo_pago || "--")} · S/ ${pedido.total_soles.toFixed(2)}`;
+        : pedido.pago_estado === "PAGADO"
+        ? `✅ Ya pagó con ${nombreMetodo}: <strong>no cobrar</strong>`
+        : `⚠️ Pago con ${nombreMetodo} sin confirmar · consulta con la tienda antes de entregar`;
 
     return `
         <article class="rep-pedido">
@@ -387,4 +392,49 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
         mostrar("login");
     }
+});
+
+
+
+/* ================= CAMBIAR MI CONTRASEÑA ================= */
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const formulario = document.getElementById("formMiPassword");
+
+    if (!formulario) {
+        return;
+    }
+
+    formulario.addEventListener("submit", async (evento) => {
+
+        evento.preventDefault();
+
+        const mensaje = document.getElementById("mensajeMiPassword");
+
+        if (formulario.nueva.value !== formulario.confirmar.value) {
+            mensaje.className = "alert alert-warning py-2";
+            mensaje.textContent = "La confirmación no coincide con la nueva contraseña.";
+            return;
+        }
+
+        try {
+
+            const datos = await api("/api/auth/cambiar-password", {
+                method: "POST",
+                body: JSON.stringify({
+                    actual: formulario.actual.value,
+                    nueva: formulario.nueva.value
+                })
+            });
+
+            formulario.reset();
+            mensaje.className = "alert alert-success py-2";
+            mensaje.textContent = datos.mensaje;
+
+        } catch (error) {
+            mensaje.className = "alert alert-danger py-2";
+            mensaje.textContent = error.message;
+        }
+    });
 });

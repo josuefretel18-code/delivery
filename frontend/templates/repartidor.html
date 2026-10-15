@@ -112,6 +112,18 @@
 
         </section>
 
+        <details class="rep-tarjeta rep-password">
+            <summary>🔑 Cambiar mi contraseña</summary>
+
+            <form id="formMiPassword" class="mt-3">
+                <input name="actual" type="password" class="form-control mb-2" placeholder="Contraseña actual" required autocomplete="current-password">
+                <input name="nueva" type="password" class="form-control mb-2" placeholder="Nueva contraseña (mínimo 8)" minlength="8" required autocomplete="new-password">
+                <input name="confirmar" type="password" class="form-control mb-2" placeholder="Repite la nueva contraseña" minlength="8" required autocomplete="new-password">
+                <div id="mensajeMiPassword" class="d-none"></div>
+                <button class="btn btn-dark w-100" type="submit">Guardar</button>
+            </form>
+        </details>
+
         <section class="rep-resumen">
             <div>
                 <span id="numEnCurso">0</span>

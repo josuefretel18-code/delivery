@@ -144,6 +144,15 @@
                     </span>
 
                     <button
+                        class="btn btn-outline-light btn-sm"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#modalMiPassword"
+                    >
+                        🔑 Contraseña
+                    </button>
+
+                    <button
                         id="btnCerrarSesionAdmin"
                         class="btn btn-outline-light btn-sm"
                     >
@@ -234,6 +243,16 @@
         data-bs-target="#modalRepartidores"
     >
         🛵 Repartidores
+    </button>
+
+    <button
+        id="btnPersonal"
+        class="btn btn-outline-dark d-none"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalPersonal"
+    >
+        👥 Personal
     </button>
 
 
@@ -1007,6 +1026,100 @@
 </div>
 
 
+<div class="modal fade" id="modalPersonal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+                <div>
+                    <h4 class="fw-bold mb-1">Personal</h4>
+                    <p class="text-secondary mb-0">
+                        Administradores y operadores: crear cuentas, activarlas y restablecer contraseñas.
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <form id="formPersonal" class="row g-2 align-items-end mb-4 acceso-repartidor">
+
+                    <div class="col-12"><strong>➕ Nueva cuenta del personal</strong></div>
+
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small fw-bold" for="perNombre">Nombre</label>
+                        <input id="perNombre" name="nombre" class="form-control form-control-sm" required minlength="3" maxlength="120">
+                    </div>
+
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small fw-bold" for="perCorreo">Correo</label>
+                        <input id="perCorreo" name="correo" type="email" class="form-control form-control-sm" required autocomplete="off">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-bold" for="perTelefono">Teléfono</label>
+                        <input id="perTelefono" name="telefono" class="form-control form-control-sm" maxlength="20">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                        <label class="form-label small fw-bold" for="perRol">Rol</label>
+                        <select id="perRol" name="rol" class="form-select form-select-sm">
+                            <option value="OPERADOR">Operador</option>
+                            <option value="ADMIN">Administrador</option>
+                        </select>
+                    </div>
+
+                    <div class="col-8 col-md-2">
+                        <label class="form-label small fw-bold" for="perPassword">Contraseña</label>
+                        <input id="perPassword" name="password" type="password" class="form-control form-control-sm" minlength="8" required autocomplete="new-password">
+                    </div>
+
+                    <div class="col-4 col-md-12 text-md-end">
+                        <button type="submit" class="btn btn-sm btn-dark">Crear cuenta</button>
+                    </div>
+
+                </form>
+
+                <div id="listaPersonal"><p class="text-secondary">Cargando...</p></div>
+
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="modalMiPassword" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">🔑 Cambiar mi contraseña</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+
+            <form id="formMiPassword" class="modal-body">
+
+                <label class="form-label fw-semibold" for="mpActual">Contraseña actual</label>
+                <input id="mpActual" name="actual" type="password" class="form-control mb-3" required autocomplete="current-password">
+
+                <label class="form-label fw-semibold" for="mpNueva">Nueva contraseña (mínimo 8)</label>
+                <input id="mpNueva" name="nueva" type="password" class="form-control mb-3" minlength="8" required autocomplete="new-password">
+
+                <label class="form-label fw-semibold" for="mpConfirmar">Repite la nueva contraseña</label>
+                <input id="mpConfirmar" name="confirmar" type="password" class="form-control mb-3" minlength="8" required autocomplete="new-password">
+
+                <div id="mensajeMiPassword" class="d-none"></div>
+
+                <button type="submit" class="btn btn-dark w-100">Guardar</button>
+
+            </form>
+
+        </div>
+    </div>
+</div>
+
+
 <!-- Asistente con LLM para administradores y operadores (solo lectura) -->
 <div
     id="kimbosAsistente"
@@ -1030,6 +1143,11 @@
 
     <script
         src="{{ url_for('static', filename='js/reporte_diario.js') }}"
+    >
+    </script>
+
+    <script
+        src="{{ url_for('static', filename='js/personal.js') }}"
     >
     </script>
 

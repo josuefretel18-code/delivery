@@ -15,8 +15,9 @@ from backend.routes.automatizacion import automatizacion_bp
 from backend.routes.repartidores import repartidores_bp
 from backend.routes.dashboard import dashboard_bp
 from backend.routes.repartidor_panel import repartidor_bp
+from backend.routes.personal import personal_bp
 from backend.repartidores import asegurar_columna_turno
-from backend.routes.pedidos import asegurar_columnas_cancelacion
+from backend.routes.pedidos import asegurar_columnas_cancelacion, asegurar_columnas_pago
 from backend.horario import texto_horario
 
 
@@ -58,6 +59,7 @@ app.register_blueprint(automatizacion_bp)
 app.register_blueprint(repartidores_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(repartidor_bp)
+app.register_blueprint(personal_bp)
 
 
 # Columnas de repartidores (turno y espera): se aplican al arrancar, no
@@ -65,6 +67,7 @@ app.register_blueprint(repartidor_bp)
 try:
     asegurar_columna_turno()
     asegurar_columnas_cancelacion()
+    asegurar_columnas_pago()
 except Exception as error:
     print(f"[MIGRACION] Pendiente: {error}", flush=True)
 

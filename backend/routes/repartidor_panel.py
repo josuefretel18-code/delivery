@@ -148,7 +148,8 @@ def mis_pedidos_asignados():
                         SELECT STRING_AGG(d.cantidad || 'x ' || d.nombre_producto, ', ')
                         FROM detalle_pedido d
                         WHERE d.pedido_id = p.id
-                    )
+                    ),
+                    p.pago_estado
                 FROM pedidos p
                 JOIN estados_pedido e ON e.id = p.estado_id
                 WHERE p.repartidor_id = %s
@@ -194,6 +195,7 @@ def mis_pedidos_asignados():
             "minutos_en_ruta": int(fila[16] or 0),
             "minutos_restantes": (prometido - transcurrido) if prometido is not None else None,
             "productos": fila[20],
+            "pago_estado": fila[21],
         }
 
         if fila[2] == "ENTREGADO":

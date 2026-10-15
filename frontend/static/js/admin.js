@@ -389,9 +389,13 @@ async function cargarPedidosAdmin(silencioso = false) {
 
     try {
 
+        // Cantidades por paso y, despues, solo los pedidos del paso
+        // elegido (los finalizados de a 30, con "Ver mas").
+        await cargarConteoPedidos();
+
         const respuesta =
             await fetch(
-                "/api/pedidos",
+                urlPedidosDelModulo(),
                 {
                     headers: {
                         "Authorization":
@@ -426,32 +430,9 @@ async function cargarPedidosAdmin(silencioso = false) {
         }
 
 
-        if (
-            !datos.pedidos ||
-            datos.pedidos.length === 0
-        ) {
-
-            sinPedidos.classList.remove(
-                "d-none"
-            );
-
-            actualizarContadores(
-                []
-            );
-
-            return;
-
-        }
-
-
-        actualizarContadores(
-            datos.pedidos
-        );
-
-
         // Solo los pedidos del paso (modulo) elegido
         mostrarModuloPedidos(
-            datos.pedidos
+            datos.pedidos || []
         );
 
 
@@ -1639,6 +1620,9 @@ function renderizarPedidosAdmin(pedidos) {
                     }
 
 
+                    ${htmlPagoAdmin(pedido)}
+
+
                     ${htmlRepartidorPedido(pedido)}
 
 
@@ -1770,6 +1754,22 @@ async function cambiarEstadoPedido(
     pedidoId,
     nuevoEstado
 ) {
+
+    // Yape / Plin sin confirmar: avisar antes de enviar a reparto
+    if (nuevoEstado === "EN_RUTA") {
+
+        const pedido = (pedidosAdminCache || []).find((p) => p.id === pedidoId);
+        const pago = pedido?.pago;
+
+        if (
+            pago &&
+            ["YAPE", "PLIN"].includes(pago.metodo) &&
+            pago.estado !== "PAGADO" &&
+            !confirm(`El pago con ${pago.metodo === "YAPE" ? "Yape" : "Plin"} aún no está confirmado. ¿Enviar el pedido de todos modos?`)
+        ) {
+            return;
+        }
+    }
 
     const token =
         localStorage.getItem(
@@ -3512,26 +3512,11 @@ function mostrarModuloPedidos(pedidos) {
 
     pedidosAdminCache = pedidos;
 
-    // Primera vez: el primer paso con pedidos pendientes (o Entregados)
-    if (!moduloPedidos) {
-
-        const guardado = leerModuloGuardado();
-
-        moduloPedidos = MODULOS_PEDIDOS[guardado]
-            ? guardado
-            : ["RECIBIDOS", "PREPARACION", "CAMINO"].find(
-                (m) => pedidosDelModulo(pedidos, m).length
-            ) || "ENTREGADOS";
-    }
+    elegirModuloInicial();
 
     const modulo = MODULOS_PEDIDOS[moduloPedidos];
     const delModulo = pedidosDelModulo(pedidos, moduloPedidos);
-
-    const totalCancelados = document.getElementById("totalCancelados");
-
-    if (totalCancelados) {
-        totalCancelados.textContent = pedidosDelModulo(pedidos, "CANCELADOS").length;
-    }
+    const totalModulo = totalDelModulo(moduloPedidos);
 
     document.querySelectorAll("[data-modulo]").forEach((boton) => {
         const activo = boton.dataset.modulo === moduloPedidos;
@@ -3542,7 +3527,7 @@ function mostrarModuloPedidos(pedidos) {
     document.getElementById("tituloModulo").innerHTML = `
         <div>
             <strong>${modulo.paso ? `Paso ${modulo.paso} · ` : ""}${modulo.nombre}</strong>
-            <span class="titulo-modulo-cantidad">${delModulo.length} pedido(s)</span>
+            <span class="titulo-modulo-cantidad">${totalModulo} pedido(s)</span>
         </div>
         <div class="titulo-modulo-guia">${modulo.guia}</div>
     `;
@@ -3559,6 +3544,17 @@ function mostrarModuloPedidos(pedidos) {
     }
 
     renderizarPedidosAdmin(delModulo);
+
+    // Paginacion de finalizados: "Ver mas"
+    if (delModulo.length < totalModulo) {
+        document.getElementById("listaPedidosAdmin").insertAdjacentHTML("beforeend", `
+            <div class="col-12 text-center">
+                <button class="btn btn-outline-dark" type="button" onclick="verMasPedidos()">
+                    Ver más (${delModulo.length} de ${totalModulo})
+                </button>
+            </div>
+        `);
+    }
 }
 
 
@@ -3572,7 +3568,8 @@ document.addEventListener("click", (evento) => {
 
     moduloPedidos = boton.dataset.modulo;
     guardarModulo(moduloPedidos);
-    mostrarModuloPedidos(pedidosAdminCache);
+    paginasFinalizados = 1;
+    cargarPedidosAdmin(true);
 });
 
 
@@ -3630,6 +3627,183 @@ async function cancelarPedidoAdmin(pedidoId, codigo, boton) {
 
         if (!respuesta.ok || !datos.ok) {
             throw new Error(datos.mensaje || "No se pudo cancelar el pedido.");
+        }
+
+        await cargarPedidosAdmin(true);
+
+    } catch (error) {
+        alert(error.message);
+        boton.disabled = false;
+    }
+}
+
+
+
+/* ========================================================
+   PAGINACIÓN DE PEDIDOS
+   El servidor envía solo el paso elegido; los finalizados
+   (Entregados y Cancelados) de a 30, con "Ver más".
+======================================================== */
+
+const PEDIDOS_POR_PAGINA = 30;
+
+let conteoPedidos = {};
+let paginasFinalizados = 1;
+
+
+async function cargarConteoPedidos() {
+
+    const respuesta = await fetch("/api/pedidos/conteo", {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}` }
+    });
+
+    const datos = await respuesta.json();
+
+    if (!respuesta.ok || !datos.ok) {
+        throw new Error(datos.mensaje || "No se pudieron cargar los pedidos.");
+    }
+
+    conteoPedidos = datos.conteo || {};
+
+    const total = (estados) => estados.reduce((s, e) => s + (conteoPedidos[e] || 0), 0);
+
+    const totales = {
+        totalRecibidos: total(MODULOS_PEDIDOS.RECIBIDOS.estados),
+        totalPreparando: total(MODULOS_PEDIDOS.PREPARACION.estados),
+        totalCamino: total(MODULOS_PEDIDOS.CAMINO.estados),
+        totalEntregados: total(MODULOS_PEDIDOS.ENTREGADOS.estados),
+        totalCancelados: total(MODULOS_PEDIDOS.CANCELADOS.estados)
+    };
+
+    Object.entries(totales).forEach(([id, valor]) => {
+        const elemento = document.getElementById(id);
+        if (elemento) {
+            elemento.textContent = valor;
+        }
+    });
+
+    elegirModuloInicial();
+}
+
+
+function totalDelModulo(modulo) {
+
+    return MODULOS_PEDIDOS[modulo].estados
+        .reduce((suma, estado) => suma + (conteoPedidos[estado] || 0), 0);
+}
+
+
+/* Primera vez: el primer paso con pendientes (o Entregados). */
+function elegirModuloInicial() {
+
+    if (moduloPedidos) {
+        return;
+    }
+
+    const guardado = leerModuloGuardado();
+
+    moduloPedidos = MODULOS_PEDIDOS[guardado]
+        ? guardado
+        : ["RECIBIDOS", "PREPARACION", "CAMINO"].find((m) => totalDelModulo(m) > 0)
+            || "ENTREGADOS";
+}
+
+
+function urlPedidosDelModulo() {
+
+    elegirModuloInicial();
+
+    const estados = MODULOS_PEDIDOS[moduloPedidos].estados.join(",");
+    const finalizado = moduloPedidos === "ENTREGADOS" || moduloPedidos === "CANCELADOS";
+
+    return finalizado
+        ? `/api/pedidos?estados=${estados}&limite=${PEDIDOS_POR_PAGINA * paginasFinalizados}`
+        : `/api/pedidos?estados=${estados}`;
+}
+
+
+function verMasPedidos() {
+
+    paginasFinalizados += 1;
+    cargarPedidosAdmin(true);
+}
+
+
+
+/* ========================================================
+   PAGO DEL PEDIDO
+   Yape / Plin: el admin confirma al verlo en su aplicación.
+   Efectivo: se cobra al entregar.
+======================================================== */
+
+function htmlPagoAdmin(pedido) {
+
+    const pago = pedido.pago;
+
+    if (!pago || pedido.estado?.codigo === "CANCELADO") {
+        return "";
+    }
+
+    const metodo = { EFECTIVO: "Efectivo", YAPE: "Yape", PLIN: "Plin" }[pago.metodo] || pago.metodo || "--";
+
+    if (pago.estado === "PAGADO") {
+        return `<div class="pago-admin pago-admin-ok">✅ Pagado · ${metodo}${pago.operacion ? ` · Op. ${escaparHtmlAdmin(pago.operacion)}` : ""}</div>`;
+    }
+
+    if (pago.metodo === "EFECTIVO") {
+        return `<div class="pago-admin">💵 Efectivo · se cobra al entregar</div>`;
+    }
+
+    return `
+        <div class="pago-admin pago-admin-pendiente">
+            <div>
+                ⏳ <strong>${metodo}: pago por confirmar</strong>
+                <div class="small">${pago.operacion
+                    ? `N.º de operación: ${escaparHtmlAdmin(pago.operacion)}`
+                    : "El cliente aún no envía el número de operación"}</div>
+            </div>
+            <button class="btn btn-sm btn-success" type="button"
+                onclick="confirmarPagoAdmin(${pedido.id}, '${metodo}', ${pago.operacion ? "true" : "false"}, this)">
+                ✅ Confirmar pago
+            </button>
+        </div>
+    `;
+}
+
+
+async function confirmarPagoAdmin(pedidoId, metodo, tieneOperacion, boton) {
+
+    let operacion = "";
+
+    if (!tieneOperacion) {
+
+        operacion = prompt(`¿Viste el pago en tu ${metodo}? Escribe el número de operación (opcional):`);
+
+        if (operacion === null) {
+            return;
+        }
+
+    } else if (!confirm(`¿Confirmas que recibiste el pago por ${metodo}?`)) {
+        return;
+    }
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch(`/api/pedidos/${pedidoId}/pago/confirmar`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            },
+            body: JSON.stringify({ operacion: (operacion || "").trim() })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo confirmar el pago.");
         }
 
         await cargarPedidosAdmin(true);

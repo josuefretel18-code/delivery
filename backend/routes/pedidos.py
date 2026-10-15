@@ -663,6 +663,22 @@ def crear_pedido():
 
                 pedido_id = cur.fetchone()[0]
 
+
+                # Yape / Plin: numero de operacion que indica el cliente
+                operacion = str(
+                    datos.get("pago_operacion") or ""
+                ).strip()[:30]
+
+                if operacion and datos.get("metodo_pago") in ("YAPE", "PLIN"):
+                    cur.execute("""
+                        UPDATE pedidos
+                        SET pago_operacion = %s
+                        WHERE id = %s;
+                    """, (
+                        operacion,
+                        pedido_id
+                    ))
+
                                 # =========================================
                 # MACHINE LEARNING
                 # =========================================
@@ -1337,10 +1353,15 @@ def mis_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    pagos = pagos_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["aviso"] = avisos.get(pedido["id"])
         pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
         pedido["cancelacion"] = cancelaciones.get(pedido["id"])
+        pedido["pago"] = pagos.get(pedido["id"])
 
         repartidor = repartidores.get(pedido["id"])
 
@@ -1370,6 +1391,20 @@ def mis_pedidos():
 @pedidos_bp.get("")
 @roles_required("ADMIN", "OPERADOR")
 def listar_pedidos():
+
+    # Filtro por paso (estados) y paginacion. Sin parametros devuelve
+    # todo, como antes. ?estados=ENTREGADO&limite=30&desde=0
+    estados = [
+        estado.strip().upper()
+        for estado in request.args.get("estados", "").split(",")
+        if estado.strip()
+    ] or None
+
+    try:
+        limite = max(min(int(request.args.get("limite", 0)), 200), 0) or None
+        desde = max(int(request.args.get("desde", 0)), 0)
+    except ValueError:
+        limite, desde = None, 0
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1446,8 +1481,20 @@ def listar_pedidos():
                     'REAL'
                 ) = 'REAL'
 
-                ORDER BY p.fecha_pedido DESC;
-            """)
+                  AND (
+                      %(estados)s::text[] IS NULL
+                      OR e.codigo = ANY(%(estados)s)
+                  )
+
+                ORDER BY p.fecha_pedido DESC
+
+                LIMIT %(limite)s
+                OFFSET %(desde)s;
+            """, {
+                "estados": estados,
+                "limite": limite,
+                "desde": desde
+            })
 
             filas = cur.fetchall()
 
@@ -1647,11 +1694,16 @@ def listar_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    pagos = pagos_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["alerta"] = alertas.get(pedido["id"])
         pedido["repartidor"] = repartidores.get(pedido["id"])
         pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
         pedido["cancelacion"] = cancelaciones.get(pedido["id"])
+        pedido["pago"] = pagos.get(pedido["id"])
 
     return jsonify({
         "ok": True,
@@ -1891,7 +1943,18 @@ def cambiar_estado_pedido(pedido_id, datos):
                                 )
                                 + 5
                             )
-                        )
+                        ),
+
+                        -- Efectivo: el repartidor lo cobra al entregar
+                        pago_estado = CASE
+                            WHEN metodo_pago = 'EFECTIVO' THEN 'PAGADO'
+                            ELSE pago_estado
+                        END,
+
+                        fecha_pago = CASE
+                            WHEN metodo_pago = 'EFECTIVO' THEN CURRENT_TIMESTAMP
+                            ELSE fecha_pago
+                        END
 
                     WHERE id = %s;
                 """, (
@@ -2401,3 +2464,181 @@ def cancelar_pedido(pedido_id):
         "mensaje": f"Pedido {codigo_pedido} cancelado",
         "pedido": {"id": pedido_id, "codigo": codigo_pedido, "estado": "CANCELADO"}
     })
+
+
+
+# =========================================================
+# CONTEO DE PEDIDOS POR ESTADO (modulos del panel)
+# =========================================================
+
+@pedidos_bp.get("/conteo")
+@roles_required("ADMIN", "OPERADOR")
+def conteo_pedidos():
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT e.codigo, COUNT(*)
+                FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
+                WHERE COALESCE(p.fuente_datos, 'REAL') = 'REAL'
+                GROUP BY e.codigo;
+            """)
+
+            conteo = dict(cur.fetchall())
+
+    return jsonify({"ok": True, "conteo": conteo})
+
+
+
+# =========================================================
+# PAGOS (Yape / Plin: el admin confirma; Efectivo: al entregar)
+# =========================================================
+
+_COLUMNAS_PAGO = {"ok": False}
+
+
+def asegurar_columnas_pago():
+    """Columnas del estado del pago. Se llama al arrancar la app."""
+
+    if _COLUMNAS_PAGO["ok"]:
+        return
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_name = 'pedidos'
+                  AND column_name IN ('pago_estado', 'pago_operacion',
+                                      'pago_confirmado_por', 'fecha_pago');
+            """)
+
+            if cur.fetchone()[0] < 4:
+                ruta = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    "sql",
+                    "agregar_pagos.sql",
+                )
+
+                with open(ruta, encoding="utf-8") as archivo:
+                    cur.execute(archivo.read())
+
+    _COLUMNAS_PAGO["ok"] = True
+
+
+def pagos_por_pedido(pedido_ids):
+
+    if not pedido_ids:
+        return {}
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, metodo_pago, pago_estado, pago_operacion, fecha_pago
+                    FROM pedidos
+                    WHERE id = ANY(%s);
+                """, (list(pedido_ids),))
+
+                return {
+                    fila[0]: {
+                        "metodo": fila[1],
+                        "estado": fila[2],
+                        "operacion": fila[3],
+                        "fecha": fila[4].isoformat() if fila[4] else None,
+                    }
+                    for fila in cur.fetchall()
+                }
+
+    except Exception:
+        return {}
+
+
+@pedidos_bp.post("/<int:pedido_id>/pago/confirmar")
+@roles_required("ADMIN", "OPERADOR")
+def confirmar_pago(pedido_id):
+    """El admin vio el pago en su aplicacion Yape/Plin y lo confirma.
+    Puede registrar el numero de operacion si el cliente no lo envio."""
+
+    operacion = str((request.get_json(silent=True) or {}).get("operacion", "")).strip()[:30]
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT p.codigo, p.metodo_pago, p.pago_estado, e.codigo
+                FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
+                WHERE p.id = %s;
+            """, (pedido_id,))
+
+            pedido = cur.fetchone()
+
+            if not pedido:
+                return jsonify({"ok": False, "mensaje": "Pedido no encontrado"}), 404
+
+            if pedido[1] not in ("YAPE", "PLIN"):
+                return jsonify({"ok": False, "mensaje": "El efectivo se cobra al entregar"}), 400
+
+            if pedido[3] == "CANCELADO":
+                return jsonify({"ok": False, "mensaje": "El pedido está cancelado"}), 409
+
+            if pedido[2] == "PAGADO":
+                return jsonify({"ok": True, "mensaje": "El pago ya estaba confirmado"})
+
+            cur.execute("""
+                UPDATE pedidos
+                SET pago_estado = 'PAGADO',
+                    fecha_pago = CURRENT_TIMESTAMP,
+                    pago_confirmado_por = %s,
+                    pago_operacion = COALESCE(NULLIF(%s, ''), pago_operacion)
+                WHERE id = %s;
+            """, (g.usuario["id"], operacion, pedido_id))
+
+            cur.execute("""
+                INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
+                VALUES (%s, 'CONFIRMAR_PAGO', 'pedidos', %s, %s);
+            """, (g.usuario["id"], pedido_id, f"{pedido[1]} {operacion}".strip()))
+
+        conn.commit()
+
+    return jsonify({"ok": True, "mensaje": f"Pago del pedido {pedido[0]} confirmado"})
+
+
+@pedidos_bp.post("/<int:pedido_id>/pago/operacion")
+@token_required
+def enviar_operacion(pedido_id):
+    """El cliente envia el numero de operacion de Yape/Plin despues."""
+
+    operacion = str((request.get_json(silent=True) or {}).get("operacion", "")).strip()[:30]
+
+    if len(operacion) < 4:
+        return jsonify({"ok": False, "mensaje": "Escribe el número de operación"}), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT p.cliente_id, p.metodo_pago, p.pago_estado, e.codigo
+                FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
+                WHERE p.id = %s;
+            """, (pedido_id,))
+
+            pedido = cur.fetchone()
+
+            if not pedido or pedido[0] != g.usuario["id"]:
+                return jsonify({"ok": False, "mensaje": "Pedido no encontrado"}), 404
+
+            if pedido[1] not in ("YAPE", "PLIN") or pedido[2] == "PAGADO" or pedido[3] == "CANCELADO":
+                return jsonify({"ok": False, "mensaje": "Este pedido no necesita número de operación"}), 409
+
+            cur.execute(
+                "UPDATE pedidos SET pago_operacion = %s WHERE id = %s;",
+                (operacion, pedido_id),
+            )
+
+        conn.commit()
+
+    return jsonify({"ok": True, "mensaje": "Número de operación enviado. La tienda confirmará tu pago."})

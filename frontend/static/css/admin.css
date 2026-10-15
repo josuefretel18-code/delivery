@@ -1107,3 +1107,29 @@ body {
     background: #fdeaea;
     border-color: #f1b5b5;
 }
+
+
+/* Pago del pedido */
+
+.pago-admin {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f7f7f7;
+    border: 1px solid #ececec;
+    font-size: 0.9rem;
+}
+
+.pago-admin-ok {
+    background: #f1faf1;
+    border-color: #bfe5bf;
+}
+
+.pago-admin-pendiente {
+    background: #fffbea;
+    border-color: #f6d48a;
+}

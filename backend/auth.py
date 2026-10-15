@@ -285,3 +285,54 @@ def perfil():
         "ok": True,
         "usuario": g.usuario
     })
+
+
+# =========================================================
+# CAMBIAR MI CONTRASEÑA (cualquier usuario con sesion)
+# =========================================================
+
+@auth_bp.post("/cambiar-password")
+@token_required
+def cambiar_password():
+
+    datos = request.get_json(silent=True) or {}
+
+    actual = str(datos.get("actual", ""))
+    nueva = str(datos.get("nueva", ""))
+
+    if len(nueva) < 8:
+        return jsonify({
+            "ok": False,
+            "mensaje": "La nueva contraseña debe tener al menos 8 caracteres"
+        }), 400
+
+    if nueva == actual:
+        return jsonify({
+            "ok": False,
+            "mensaje": "La nueva contraseña debe ser distinta de la actual"
+        }), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute(
+                "SELECT password_hash FROM usuarios WHERE id = %s;",
+                (g.usuario["id"],),
+            )
+
+            fila = cur.fetchone()
+
+            if not fila or not check_password_hash(fila[0], actual):
+                return jsonify({
+                    "ok": False,
+                    "mensaje": "La contraseña actual no es correcta"
+                }), 400
+
+            cur.execute(
+                "UPDATE usuarios SET password_hash = %s WHERE id = %s;",
+                (generate_password_hash(nueva), g.usuario["id"]),
+            )
+
+        conn.commit()
+
+    return jsonify({"ok": True, "mensaje": "Tu contraseña se cambió correctamente"})

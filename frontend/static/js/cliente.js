@@ -2317,6 +2317,9 @@ async function confirmarPedido() {
         metodo_pago:
             metodoPago,
 
+        pago_operacion:
+            (document.getElementById("pagoOperacion")?.value || "").trim() || null,
+
         indicaciones_entrega:
             indicaciones || null,
 
@@ -2846,6 +2849,9 @@ function renderizarMisPedidos(
                     ${construirAvisoAgentes(pedido)}
 
 
+                    ${construirEstadoPago(pedido)}
+
+
                     ${
                         pedido.estado.codigo === "REGISTRADO"
                             ? `
@@ -3370,3 +3376,96 @@ setInterval(async () => {
     }
 
 }, 5000);
+
+
+
+/* ========================================================
+   PAGO (Yape / Plin / Efectivo)
+======================================================== */
+
+const NOMBRE_PAGO = { EFECTIVO: "efectivo", YAPE: "Yape", PLIN: "Plin" };
+
+
+function construirEstadoPago(pedido) {
+
+    const pago = pedido.pago;
+
+    if (!pago || pedido.estado.codigo === "CANCELADO") {
+        return "";
+    }
+
+    const metodo = NOMBRE_PAGO[pago.metodo] || pago.metodo || "--";
+
+    if (pago.estado === "PAGADO") {
+        return `<div class="pago-cliente pago-ok">✅ Pago con ${metodo} confirmado</div>`;
+    }
+
+    if (pago.metodo === "EFECTIVO") {
+        return `<div class="pago-cliente">💵 Pagas en efectivo al recibir tu pedido</div>`;
+    }
+
+    return `
+        <div class="pago-cliente pago-pendiente">
+            ⏳ Pago con ${metodo} por confirmar
+            ${pago.operacion
+                ? `<div class="small">N.º de operación enviado: ${escaparHtml(pago.operacion)}</div>`
+                : `
+                    <div class="input-group input-group-sm mt-2">
+                        <input id="operacion${pedido.id}" class="form-control" maxlength="30"
+                            placeholder="Número de operación">
+                        <button class="btn btn-dark" type="button"
+                            onclick="enviarOperacion(${pedido.id}, this)">Enviar</button>
+                    </div>
+                `}
+        </div>
+    `;
+}
+
+
+async function enviarOperacion(pedidoId, boton) {
+
+    const campo = document.getElementById(`operacion${pedidoId}`);
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch(`/api/pedidos/${pedidoId}/pago/operacion`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_token")}`
+            },
+            body: JSON.stringify({ operacion: campo.value })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo enviar.");
+        }
+
+        await cargarMisPedidos(true);
+
+    } catch (error) {
+        alert(error.message);
+        boton.disabled = false;
+    }
+}
+
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const metodo = document.getElementById("metodoPago");
+    const bloque = document.getElementById("bloqueOperacion");
+
+    if (!metodo || !bloque) {
+        return;
+    }
+
+    const actualizar = () =>
+        bloque.classList.toggle("d-none", !["YAPE", "PLIN"].includes(metodo.value));
+
+    metodo.addEventListener("change", actualizar);
+    actualizar();
+});

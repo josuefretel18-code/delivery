@@ -809,3 +809,22 @@ body {
     border: 1px solid #f1b5b5;
     font-size: 0.9rem;
 }
+
+
+/* Estado del pago en Mis pedidos */
+
+.pago-cliente {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #f7f7f7;
+    font-size: 0.9rem;
+}
+
+.pago-ok {
+    background: #e9f7e9;
+}
+
+.pago-pendiente {
+    background: #fff6dd;
+}

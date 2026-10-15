@@ -20,6 +20,13 @@ CACHE_USUARIO_SEGUNDOS = 60
 _CACHE_USUARIOS = {}
 
 
+def invalidar_usuario(usuario_id):
+    """Olvida los datos guardados de un usuario (por ejemplo, al
+    desactivarlo) para que el cambio se aplique de inmediato."""
+
+    _CACHE_USUARIOS.pop(usuario_id, None)
+
+
 def _buscar_usuario(usuario_id):
 
     guardado = _CACHE_USUARIOS.get(usuario_id)
