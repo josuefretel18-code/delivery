@@ -249,78 +249,95 @@
             </div>
 
 
-            <!-- RESUMEN -->
+            <!-- MODULOS: los 4 pasos del pedido -->
 
-            <div class="row g-3 mb-4">
+            <div class="row g-3 mb-3 modulos-pasos" role="tablist" aria-label="Pasos del pedido">
 
                 <div class="col-6 col-lg-3">
 
-                    <div class="estadistica-card">
+                    <button
+                        type="button"
+                        class="modulo-paso"
+                        data-modulo="RECIBIDOS"
+                    >
+                        <span class="modulo-num">1</span>
 
-                        <small>
-                            Pedidos recibidos
-                        </small>
+                        <span class="modulo-cuerpo">
+                            <small>📥 Recibidos</small>
+                            <strong id="totalRecibidos">0</strong>
+                            <span class="modulo-ayuda">Por aceptar</span>
+                        </span>
 
-                        <strong id="totalRecibidos">
-                            0
-                        </strong>
-
-                    </div>
+                        <span class="modulo-flecha" aria-hidden="true">→</span>
+                    </button>
 
                 </div>
 
-
                 <div class="col-6 col-lg-3">
 
-                    <div class="estadistica-card">
+                    <button
+                        type="button"
+                        class="modulo-paso"
+                        data-modulo="PREPARACION"
+                    >
+                        <span class="modulo-num">2</span>
 
-                        <small>
-                            En preparación
-                        </small>
+                        <span class="modulo-cuerpo">
+                            <small>👨‍🍳 En preparación</small>
+                            <strong id="totalPreparando">0</strong>
+                            <span class="modulo-ayuda">En cocina</span>
+                        </span>
 
-                        <strong id="totalPreparando">
-                            0
-                        </strong>
-
-                    </div>
+                        <span class="modulo-flecha" aria-hidden="true">→</span>
+                    </button>
 
                 </div>
 
-
                 <div class="col-6 col-lg-3">
 
-                    <div class="estadistica-card">
+                    <button
+                        type="button"
+                        class="modulo-paso"
+                        data-modulo="CAMINO"
+                    >
+                        <span class="modulo-num">3</span>
 
-                        <small>
-                            En camino
-                        </small>
+                        <span class="modulo-cuerpo">
+                            <small>🛵 En camino</small>
+                            <strong id="totalCamino">0</strong>
+                            <span class="modulo-ayuda">Con el repartidor</span>
+                        </span>
 
-                        <strong id="totalCamino">
-                            0
-                        </strong>
-
-                    </div>
+                        <span class="modulo-flecha" aria-hidden="true">→</span>
+                    </button>
 
                 </div>
 
-
                 <div class="col-6 col-lg-3">
 
-                    <div class="estadistica-card">
+                    <button
+                        type="button"
+                        class="modulo-paso"
+                        data-modulo="ENTREGADOS"
+                    >
+                        <span class="modulo-num">4</span>
 
-                        <small>
-                            Entregados
-                        </small>
+                        <span class="modulo-cuerpo">
+                            <small>✅ Entregados</small>
+                            <strong id="totalEntregados">0</strong>
+                            <span class="modulo-ayuda">Finalizados</span>
+                        </span>
 
-                        <strong id="totalEntregados">
-                            0
-                        </strong>
-
-                    </div>
+                        
+                    </button>
 
                 </div>
 
             </div>
+
+
+            <!-- Titulo del modulo elegido -->
+            <div id="tituloModulo" class="titulo-modulo"></div>
 
 
             <div

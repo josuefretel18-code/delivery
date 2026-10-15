@@ -958,3 +958,129 @@ body {
 .seg-ok { background: #e9f7e9; border-color: #0ca30c; }
 .seg-justo { background: #fff6dd; border-color: #fab219; }
 .seg-tarde { background: #fdeaea; border-color: #d03b3b; }
+
+
+/* Modulos de pedidos: los 4 pasos */
+
+.modulo-paso {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 20px;
+    border: 2px solid transparent;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    text-align: left;
+    color: inherit;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.modulo-paso:hover {
+    border-color: #ffd2b0;
+    transform: translateY(-1px);
+}
+
+.modulo-paso.activo {
+    border-color: #ff6b00;
+    background: #fff8f2;
+}
+
+.modulo-num {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #ececec;
+    color: #171717;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.modulo-paso.activo .modulo-num {
+    background: #ff6b00;
+    color: #ffffff;
+}
+
+.modulo-cuerpo {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.modulo-cuerpo small {
+    color: #52514e;
+    font-size: 0.9rem;
+}
+
+.modulo-cuerpo strong {
+    font-size: 2rem;
+    line-height: 1.2;
+}
+
+.modulo-ayuda {
+    font-size: 0.75rem;
+    color: #898781;
+}
+
+.modulo-flecha {
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #f5f6f7;
+    color: #898781;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+}
+
+@media (min-width: 992px) {
+    .modulo-flecha {
+        display: inline-flex;
+    }
+}
+
+.titulo-modulo {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px 16px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid #ececec;
+}
+
+.titulo-modulo-cantidad {
+    margin-left: 8px;
+    color: #52514e;
+    font-size: 0.9rem;
+}
+
+.titulo-modulo-guia {
+    color: #52514e;
+    font-size: 0.88rem;
+}
+
+.modulo-vacio {
+    padding: 28px;
+    text-align: center;
+    color: #52514e;
+    background: #ffffff;
+    border: 1px dashed #d8d8d8;
+    border-radius: 16px;
+}

@@ -449,7 +449,8 @@ async function cargarPedidosAdmin(silencioso = false) {
         );
 
 
-        renderizarPedidosAdmin(
+        // Solo los pedidos del paso (modulo) elegido
+        mostrarModuloPedidos(
             datos.pedidos
         );
 
@@ -3406,3 +3407,133 @@ setInterval(() => {
     }
 
 }, 30000);
+
+
+
+/* ========================================================
+   MODULOS DE PEDIDOS: los 4 pasos
+   1 Recibidos -> 2 En preparación -> 3 En camino -> 4 Entregados
+   Al pulsar un módulo se ven solo los pedidos de ese paso.
+======================================================== */
+
+const MODULOS_PEDIDOS = {
+    RECIBIDOS: {
+        paso: 1,
+        nombre: "Recibidos",
+        estados: ["REGISTRADO"],
+        guia: "Revisa el pedido y pásalo a preparación."
+    },
+    PREPARACION: {
+        paso: 2,
+        nombre: "En preparación",
+        estados: ["PREPARANDO"],
+        guia: "Cuando esté listo, asigna el repartidor y envía el pedido."
+    },
+    CAMINO: {
+        paso: 3,
+        nombre: "En camino",
+        estados: ["ASIGNADO", "RECOGIDO", "EN_RUTA"],
+        guia: "El repartidor marcará la entrega desde su panel."
+    },
+    ENTREGADOS: {
+        paso: 4,
+        nombre: "Entregados",
+        estados: ["ENTREGADO"],
+        guia: "Pedidos finalizados, del más reciente al más antiguo."
+    }
+};
+
+const CLAVE_MODULO = "kimbos_admin_modulo";
+
+let moduloPedidos = null;
+let pedidosAdminCache = [];
+
+
+function leerModuloGuardado() {
+
+    try {
+        return sessionStorage.getItem(CLAVE_MODULO);
+    } catch (error) {
+        return null;
+    }
+}
+
+
+function guardarModulo(modulo) {
+
+    try {
+        sessionStorage.setItem(CLAVE_MODULO, modulo);
+    } catch (error) {
+        // Sin almacenamiento: solo se pierde la preferencia
+    }
+}
+
+
+function pedidosDelModulo(pedidos, modulo) {
+
+    const estados = MODULOS_PEDIDOS[modulo].estados;
+
+    return pedidos.filter((p) => estados.includes(p.estado?.codigo));
+}
+
+
+function mostrarModuloPedidos(pedidos) {
+
+    pedidosAdminCache = pedidos;
+
+    // Primera vez: el primer paso con pedidos pendientes (o Entregados)
+    if (!moduloPedidos) {
+
+        const guardado = leerModuloGuardado();
+
+        moduloPedidos = MODULOS_PEDIDOS[guardado]
+            ? guardado
+            : ["RECIBIDOS", "PREPARACION", "CAMINO"].find(
+                (m) => pedidosDelModulo(pedidos, m).length
+            ) || "ENTREGADOS";
+    }
+
+    const modulo = MODULOS_PEDIDOS[moduloPedidos];
+    const delModulo = pedidosDelModulo(pedidos, moduloPedidos);
+
+    document.querySelectorAll(".modulo-paso").forEach((boton) => {
+        const activo = boton.dataset.modulo === moduloPedidos;
+        boton.classList.toggle("activo", activo);
+        boton.setAttribute("aria-selected", activo ? "true" : "false");
+    });
+
+    document.getElementById("tituloModulo").innerHTML = `
+        <div>
+            <strong>Paso ${modulo.paso} · ${modulo.nombre}</strong>
+            <span class="titulo-modulo-cantidad">${delModulo.length} pedido(s)</span>
+        </div>
+        <div class="titulo-modulo-guia">${modulo.guia}</div>
+    `;
+
+    if (!delModulo.length) {
+        document.getElementById("listaPedidosAdmin").innerHTML = `
+            <div class="col-12">
+                <div class="modulo-vacio">
+                    No hay pedidos en el paso “${modulo.nombre}”.
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    renderizarPedidosAdmin(delModulo);
+}
+
+
+document.addEventListener("click", (evento) => {
+
+    const boton = evento.target.closest(".modulo-paso");
+
+    if (!boton) {
+        return;
+    }
+
+    moduloPedidos = boton.dataset.modulo;
+    guardarModulo(moduloPedidos);
+    mostrarModuloPedidos(pedidosAdminCache);
+});
