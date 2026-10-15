@@ -182,18 +182,23 @@
 
         const contenedor = document.getElementById("listaClientes");
         const buscar = document.getElementById("buscarCliente").value.trim();
+        const conSinteticos = document.getElementById("verSinteticos").checked;
 
         try {
 
-            const { clientes, total } = await pedir(
-                `/api/personal/clientes?buscar=${encodeURIComponent(buscar)}`
+            const { clientes, total, sinteticos } = await pedir(
+                `/api/personal/clientes?buscar=${encodeURIComponent(buscar)}&sinteticos=${conSinteticos ? 1 : 0}`
             );
 
-            const conCompras = clientes.filter((c) => c.entregados > 0).length;
+            const reales = clientes.filter((c) => !c.sintetico);
+            const conCompras = reales.filter((c) => c.entregados > 0).length;
 
             document.getElementById("resumenClientes").textContent = buscar
-                ? `${clientes.length} resultado(s) de ${total} clientes registrados.`
-                : `${total} clientes registrados · ${conCompras} con al menos una compra entregada.`;
+                ? `${clientes.length} resultado(s).`
+                : `${total} clientes reales · ${conCompras} con al menos una compra entregada.`;
+
+            document.getElementById("etiquetaSinteticos").textContent =
+                `Mostrar también las ${sinteticos} cuentas del dataset sintético del ML`;
 
             if (!clientes.length) {
                 contenedor.innerHTML = `<p class="text-secondary">No hay clientes que coincidan.</p>`;
@@ -215,7 +220,9 @@
                                 <tr class="${c.activo ? "" : "text-secondary"}">
                                     <td>
                                         <strong>${escapar(c.nombre)}</strong>
-                                        ${c.activo ? "" : `<span class="badge bg-secondary ms-1">Inactivo</span>`}
+                                        ${c.sintetico
+                                            ? `<span class="badge bg-secondary ms-1" title="Cuenta generada para entrenar el modelo de ML; no es una persona">Sintético (ML)</span>`
+                                            : c.activo ? "" : `<span class="badge bg-secondary ms-1">Inactivo</span>`}
                                         <div class="small text-secondary">${escapar(c.correo)}</div>
                                     </td>
                                     <td>${escapar(c.telefono || "—")}</td>
@@ -233,6 +240,7 @@
                 </div>
                 <p class="small text-secondary mb-0">
                     “Comprado” suma solo los pedidos entregados. Los cancelados no se cuentan.
+                    Las cuentas “Sintético (ML)” y sus pedidos se generaron para entrenar el modelo; no pueden iniciar sesión.
                 </p>
             `;
 
@@ -314,6 +322,7 @@
 
             modalClientes.addEventListener("show.bs.modal", () => {
                 document.getElementById("buscarCliente").value = "";
+                document.getElementById("verSinteticos").checked = false;
                 document.getElementById("listaClientes").innerHTML = `<p class="text-secondary">Cargando...</p>`;
                 cargarClientes();
             });
@@ -323,6 +332,8 @@
                 clearTimeout(busquedaClientes);
                 busquedaClientes = setTimeout(cargarClientes, 350);
             });
+
+            document.getElementById("verSinteticos").addEventListener("change", cargarClientes);
         }
 
         if (modalPassword) {

@@ -1129,10 +1129,17 @@
                 <input
                     id="buscarCliente"
                     type="search"
-                    class="form-control mb-3"
+                    class="form-control mb-2"
                     placeholder="Buscar por nombre, correo o teléfono"
                     autocomplete="off"
                 >
+
+                <div class="form-check form-switch mb-3">
+                    <input id="verSinteticos" class="form-check-input" type="checkbox" role="switch">
+                    <label id="etiquetaSinteticos" class="form-check-label small text-secondary" for="verSinteticos">
+                        Mostrar también las cuentas del dataset sintético del ML
+                    </label>
+                </div>
 
                 <div id="listaClientes"><p class="text-secondary">Cargando...</p></div>
 
