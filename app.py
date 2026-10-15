@@ -16,6 +16,8 @@ from backend.routes.repartidores import repartidores_bp
 from backend.routes.dashboard import dashboard_bp
 from backend.routes.repartidor_panel import repartidor_bp
 from backend.repartidores import asegurar_columna_turno
+from backend.routes.pedidos import asegurar_columnas_cancelacion
+from backend.horario import texto_horario
 
 
 load_dotenv()
@@ -62,16 +64,17 @@ app.register_blueprint(repartidor_bp)
 # durante un pedido. Si la BD no responde, la app arranca igual.
 try:
     asegurar_columna_turno()
+    asegurar_columnas_cancelacion()
 except Exception as error:
-    print(f"[REPARTIDORES] Migracion pendiente: {error}", flush=True)
+    print(f"[MIGRACION] Pendiente: {error}", flush=True)
 
 @app.get("/")
 def inicio():
     return render_template(
         "index.html",
         maps_api_key=os.getenv("MAPS_API_KEY", ""),
-        # Horario de atencion (TIENDA_HORARIO); si no esta, no se muestra
-        horario=os.getenv("TIENDA_HORARIO", "").strip()
+        # Horario de atencion (TIENDA_APERTURA / TIENDA_CIERRE)
+        horario=texto_horario()
     )
 
 

@@ -1146,6 +1146,15 @@ function configurarContinuarPedido() {
                 return;
             }
 
+            // Fuera de horario no se aceptan pedidos
+            if (horarioTienda && !horarioTienda.abierto) {
+                alert(
+                    `Kimbos está cerrado en este momento. ` +
+                    `Atendemos de ${horarioTienda.texto}.`
+                );
+                return;
+            }
+
             const sesionValida =
                 await cargarPerfil();
 
@@ -2544,7 +2553,7 @@ async function abrirMisPedidos() {
    CARGAR PEDIDOS
 ======================================================== */
 
-async function cargarMisPedidos() {
+async function cargarMisPedidos(silencioso = false) {
 
     const token =
         localStorage.getItem(
@@ -2571,19 +2580,23 @@ async function cargarMisPedidos() {
             "errorMisPedidos"
         );
 
-    cargando.classList.remove(
-        "d-none"
-    );
+    // En la actualizacion automatica no se vacia la lista (sin parpadeo)
+    if (!silencioso) {
 
-    sinPedidos.classList.add(
-        "d-none"
-    );
+        cargando.classList.remove(
+            "d-none"
+        );
 
-    error.classList.add(
-        "d-none"
-    );
+        sinPedidos.classList.add(
+            "d-none"
+        );
 
-    lista.innerHTML = "";
+        error.classList.add(
+            "d-none"
+        );
+
+        lista.innerHTML = "";
+    }
 
     try {
 
@@ -2769,9 +2782,11 @@ function renderizarMisPedidos(
 
 
             const seguimiento =
-                construirSeguimientoSimple(
-                    pedido.estado.codigo
-                );
+                pedido.estado.codigo === "CANCELADO"
+                    ? construirCancelado(pedido)
+                    : construirSeguimientoSimple(
+                        pedido.estado.codigo
+                    );
 
 
             lista.innerHTML += `
@@ -2829,6 +2844,21 @@ function renderizarMisPedidos(
 
 
                     ${construirAvisoAgentes(pedido)}
+
+
+                    ${
+                        pedido.estado.codigo === "REGISTRADO"
+                            ? `
+                                <button
+                                    class="btn btn-outline-danger btn-sm w-100 mb-3"
+                                    type="button"
+                                    onclick="cancelarMiPedido(${pedido.id}, '${escaparHtml(pedido.codigo)}', this)"
+                                >
+                                    Cancelar pedido
+                                </button>
+                            `
+                            : ""
+                    }
 
 
                     ${
@@ -3207,3 +3237,136 @@ document.addEventListener("visibilitychange", () => {
         cerrarSesionPorInactividad();
     }
 });
+
+
+
+/* ========================================================
+   HORARIO DE ATENCIÓN
+   La tienda muestra si está abierta y no deja pedir fuera
+   de horario (el servidor también lo valida).
+======================================================== */
+
+let horarioTienda = null;
+
+
+async function cargarHorarioTienda() {
+
+    try {
+
+        const respuesta = await fetch("/api/sedes/activa");
+        const datos = await respuesta.json();
+
+        if (!datos.ok || !datos.horario) {
+            return;
+        }
+
+        horarioTienda = datos.horario;
+
+        const insignia = document.getElementById("estadoTienda");
+
+        if (insignia) {
+            insignia.textContent = `● ${datos.horario.mensaje}`;
+            insignia.classList.toggle("badge-abierto", datos.horario.abierto);
+            insignia.classList.toggle("badge-cerrado", !datos.horario.abierto);
+        }
+
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+
+document.addEventListener("DOMContentLoaded", () => {
+    cargarHorarioTienda();
+    setInterval(cargarHorarioTienda, 60000);
+});
+
+
+/* ========================================================
+   CANCELAR PEDIDO (cliente)
+   Solo mientras el pedido está "Recibido".
+======================================================== */
+
+function construirCancelado(pedido) {
+
+    const quien = pedido.cancelacion?.por === "CLIENTE"
+        ? "Cancelaste este pedido"
+        : "La tienda canceló este pedido";
+
+    return `
+        <div class="pedido-cancelado">
+            <strong>🚫 ${quien}</strong>
+            ${pedido.cancelacion?.motivo
+                ? `<div>Motivo: ${escaparHtml(pedido.cancelacion.motivo)}</div>`
+                : ""}
+        </div>
+    `;
+}
+
+
+async function cancelarMiPedido(pedidoId, codigo, boton) {
+
+    if (!confirm(`¿Seguro que quieres cancelar el pedido ${codigo}?`)) {
+        return;
+    }
+
+    const motivo = prompt("¿Por qué lo cancelas? (opcional)") || "";
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch(`/api/pedidos/${pedidoId}/cancelar`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_token")}`
+            },
+            body: JSON.stringify({ motivo })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo cancelar el pedido.");
+        }
+
+        await cargarMisPedidos(true);
+
+    } catch (error) {
+        alert(error.message);
+        boton.disabled = false;
+    }
+}
+
+
+/* ========================================================
+   ACTUALIZACIÓN AUTOMÁTICA DE "MIS PEDIDOS" (cada 5 s)
+   Solo mientras la ventana está abierta.
+======================================================== */
+
+let misPedidosCargando = false;
+
+setInterval(async () => {
+
+    const modal = document.getElementById("modalMisPedidos");
+
+    if (
+        misPedidosCargando ||
+        !modal ||
+        !modal.classList.contains("show") ||
+        !localStorage.getItem("kimbos_token") ||
+        document.visibilityState !== "visible"
+    ) {
+        return;
+    }
+
+    misPedidosCargando = true;
+
+    try {
+        await cargarMisPedidos(true);
+    } finally {
+        misPedidosCargando = false;
+    }
+
+}, 5000);

@@ -17,6 +17,7 @@ from backend.repartidores import (
     estimar_espera_repartidor,
     repartidores_por_pedido
 )
+from backend.horario import mensaje_cerrado, tienda_abierta
 from backend.ml_reentrenamiento import (
     iniciar_reentrenamiento_automatico,
     reentrenamiento_automatico_activo,
@@ -149,6 +150,18 @@ def crear_pedido():
             "ok": False,
             "mensaje": "No tiene permisos para registrar pedidos"
         }), 403
+
+
+    # =====================================================
+    # HORARIO DE ATENCION
+    # =====================================================
+
+    if not tienda_abierta():
+        return jsonify({
+            "ok": False,
+            "cerrado": True,
+            "mensaje": mensaje_cerrado()
+        }), 409
 
 
     # =====================================================
@@ -1320,9 +1333,14 @@ def mis_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    cancelaciones = cancelaciones_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["aviso"] = avisos.get(pedido["id"])
         pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
+        pedido["cancelacion"] = cancelaciones.get(pedido["id"])
 
         repartidor = repartidores.get(pedido["id"])
 
@@ -1625,10 +1643,15 @@ def listar_pedidos():
         [pedido["id"] for pedido in pedidos]
     )
 
+    cancelaciones = cancelaciones_por_pedido(
+        [pedido["id"] for pedido in pedidos]
+    )
+
     for pedido in pedidos:
         pedido["alerta"] = alertas.get(pedido["id"])
         pedido["repartidor"] = repartidores.get(pedido["id"])
         pedido["espera_repartidor_min"] = esperas.get(pedido["id"], 0)
+        pedido["cancelacion"] = cancelaciones.get(pedido["id"])
 
     return jsonify({
         "ok": True,
@@ -2222,4 +2245,159 @@ def reentrenar_ml():
         "ok": True,
         "resultado": resultado["resultado"],
         "mensaje": resultado["mensaje"]
+    })
+
+
+
+# =========================================================
+# CANCELAR PEDIDO
+#
+# - Cliente: solo sus pedidos y mientras esten "Recibidos".
+# - Admin / Operador: antes de enviarlos (Recibido o En
+#   preparacion), con un motivo.
+# =========================================================
+
+_COLUMNAS_CANCELACION = {"ok": False}
+
+
+def asegurar_columnas_cancelacion():
+    """Columnas motivo_cancelacion y cancelado_por. Se llama al
+    arrancar la app (nunca dentro de una operacion de pedido)."""
+
+    if _COLUMNAS_CANCELACION["ok"]:
+        return
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_name = 'pedidos'
+                  AND column_name IN ('motivo_cancelacion', 'cancelado_por');
+            """)
+
+            if cur.fetchone()[0] < 2:
+                ruta = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    "sql",
+                    "agregar_cancelacion.sql",
+                )
+
+                with open(ruta, encoding="utf-8") as archivo:
+                    cur.execute(archivo.read())
+
+    _COLUMNAS_CANCELACION["ok"] = True
+
+
+def cancelaciones_por_pedido(pedido_ids):
+
+    if not pedido_ids:
+        return {}
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT p.id, p.motivo_cancelacion, p.cancelado_por, p.fecha_cancelacion
+                    FROM pedidos p
+                    JOIN estados_pedido e ON e.id = p.estado_id
+                    WHERE p.id = ANY(%s)
+                      AND e.codigo = 'CANCELADO';
+                """, (list(pedido_ids),))
+
+                return {
+                    fila[0]: {
+                        "motivo": fila[1],
+                        "por": fila[2],
+                        "fecha": fila[3].isoformat() if fila[3] else None,
+                    }
+                    for fila in cur.fetchall()
+                }
+
+    except Exception:
+        # Antes de la migracion las columnas pueden no existir.
+        return {}
+
+
+@pedidos_bp.post("/<int:pedido_id>/cancelar")
+@token_required
+def cancelar_pedido(pedido_id):
+
+    datos = request.get_json(silent=True) or {}
+    motivo = str(datos.get("motivo", "")).strip()[:200]
+    rol = g.usuario["rol"]
+
+    if rol not in ("CLIENTE", "ADMIN", "OPERADOR"):
+        return jsonify({"ok": False, "mensaje": "No tiene permisos para cancelar pedidos"}), 403
+
+    if rol != "CLIENTE" and len(motivo) < 3:
+        return jsonify({"ok": False, "mensaje": "Indica el motivo de la cancelación"}), 400
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT p.codigo, p.cliente_id, e.codigo
+                FROM pedidos p
+                JOIN estados_pedido e ON e.id = p.estado_id
+                WHERE p.id = %s
+                FOR UPDATE OF p;
+            """, (pedido_id,))
+
+            pedido = cur.fetchone()
+
+            if not pedido or (rol == "CLIENTE" and pedido[1] != g.usuario["id"]):
+                return jsonify({"ok": False, "mensaje": "Pedido no encontrado"}), 404
+
+            codigo_pedido, _, estado_actual = pedido
+
+            permitidos = ("REGISTRADO",) if rol == "CLIENTE" else ("REGISTRADO", "PREPARANDO")
+
+            if estado_actual not in permitidos:
+                return jsonify({
+                    "ok": False,
+                    "mensaje": (
+                        "Este pedido ya no se puede cancelar porque está en "
+                        "preparación, en camino o finalizado. Comunícate con la tienda."
+                        if rol == "CLIENTE"
+                        else "Solo se pueden cancelar pedidos que aún no salieron a reparto"
+                    )
+                }), 409
+
+            cur.execute("SELECT id FROM estados_pedido WHERE codigo = 'CANCELADO';")
+            cancelado_id = cur.fetchone()[0]
+
+            por = "CLIENTE" if rol == "CLIENTE" else "TIENDA"
+            motivo = motivo or "Sin motivo indicado"
+
+            cur.execute("""
+                UPDATE pedidos
+                SET estado_id = %s,
+                    fecha_cancelacion = CURRENT_TIMESTAMP,
+                    motivo_cancelacion = %s,
+                    cancelado_por = %s
+                WHERE id = %s;
+            """, (cancelado_id, motivo, por, pedido_id))
+
+            cur.execute("""
+                INSERT INTO historial_pedido (pedido_id, estado_id, observacion, usuario_id)
+                VALUES (%s, %s, %s, %s);
+            """, (
+                pedido_id,
+                cancelado_id,
+                f"Cancelado por {'el cliente' if por == 'CLIENTE' else 'la tienda'}: {motivo}",
+                g.usuario["id"],
+            ))
+
+            cur.execute("""
+                INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, detalle)
+                VALUES (%s, 'CANCELAR_PEDIDO', 'pedidos', %s, %s);
+            """, (g.usuario["id"], pedido_id, f"{estado_actual} -> CANCELADO: {motivo}"))
+
+        conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "mensaje": f"Pedido {codigo_pedido} cancelado",
+        "pedido": {"id": pedido_id, "codigo": codigo_pedido, "estado": "CANCELADO"}
     })

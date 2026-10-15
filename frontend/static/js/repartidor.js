@@ -283,6 +283,25 @@ async function actualizar() {
 }
 
 
+// Evita superponer actualizaciones si una tarda mas de 5 s
+let actualizando = false;
+
+async function actualizarSiLibre() {
+
+    if (actualizando || document.visibilityState !== "visible") {
+        return;
+    }
+
+    actualizando = true;
+
+    try {
+        await actualizar();
+    } finally {
+        actualizando = false;
+    }
+}
+
+
 async function entrarAlPanel() {
 
     mostrar("panel");
@@ -290,7 +309,7 @@ async function entrarAlPanel() {
     await actualizar();
 
     clearInterval(temporizador);
-    temporizador = setInterval(actualizar, 30000);
+    temporizador = setInterval(actualizarSiLibre, 5000);
 }
 
 

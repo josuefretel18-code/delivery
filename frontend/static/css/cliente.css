@@ -790,3 +790,22 @@ body {
 .aviso-inactividad.visible {
     transform: translate(-50%, 0);
 }
+
+
+/* Tienda cerrada */
+
+.badge-cerrado {
+    background: #5a1e1e;
+    color: #ffd6d6;
+}
+
+/* Pedido cancelado en Mis pedidos */
+
+.pedido-cancelado {
+    margin: 12px 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fdeaea;
+    border: 1px solid #f1b5b5;
+    font-size: 0.9rem;
+}

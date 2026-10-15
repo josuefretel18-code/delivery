@@ -1084,3 +1084,26 @@ body {
     border: 1px dashed #d8d8d8;
     border-radius: 16px;
 }
+
+
+/* Cancelados */
+
+.modulo-mini {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid #e1e0d9;
+    background: #ffffff;
+    font-size: 0.85rem;
+    color: #52514e;
+}
+
+.modulo-mini.activo {
+    border-color: #d03b3b;
+    background: #fdeaea;
+    color: #0b0b0b;
+}
+
+.seg-cancelado {
+    background: #fdeaea;
+    border-color: #f1b5b5;
+}

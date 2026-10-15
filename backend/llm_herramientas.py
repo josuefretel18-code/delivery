@@ -11,6 +11,7 @@ from decimal import Decimal
 from db import get_connection
 from backend.ml_service import obtener_datos_ml, predecir_retraso
 from backend.repartidores import listar_repartidores
+from backend.horario import estado_horario
 
 
 COSTO_BASE_DELIVERY = Decimal("3.00")
@@ -191,6 +192,7 @@ def info_tienda(usuario, distancia_km=None):
         "direccion": sede[2] if sede else None,
         "telefono": sede[3] if sede else None,
         "delivery": "S/ 3.00 base + S/ 1.20 por km",
+        "horario": estado_horario(),
         "como_pedir": (
             "Agregar productos al carrito, elegir la direccion "
             "de entrega en el mapa y confirmar el pedido."

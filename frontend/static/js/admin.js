@@ -1669,6 +1669,9 @@ function renderizarPedidosAdmin(pedidos) {
                             `
                     }
 
+
+                    ${htmlCancelarAdmin(pedido)}
+
                 </div>
 
             </div>
@@ -3338,6 +3341,19 @@ function seguimientoEntrega(pedido) {
     const repartidor = pedido.repartidor;
     const estado = pedido.estado?.codigo;
 
+    if (estado === "CANCELADO") {
+        return `
+            <div class="seguimiento-entrega seg-cancelado">
+                <div class="seg-titulo">
+                    🚫 Cancelado por ${pedido.cancelacion?.por === "CLIENTE" ? "el cliente" : "la tienda"}
+                </div>
+                ${pedido.cancelacion?.motivo
+                    ? `<div class="seg-detalle">Motivo: ${escaparHtmlAdmin(pedido.cancelacion.motivo)}</div>`
+                    : ""}
+            </div>
+        `;
+    }
+
     if (!repartidor || (estado !== "EN_RUTA" && estado !== "ENTREGADO")) {
         return "";
     }
@@ -3392,21 +3408,30 @@ function seguimientoEntrega(pedido) {
 }
 
 
-/* El panel se actualiza solo cada 30 s para ver las entregas que
+/* El panel se actualiza solo cada 5 s para ver las entregas que
    marcan los repartidores (no mientras hay una ventana abierta). */
-setInterval(() => {
+let panelActualizando = false;
+
+setInterval(async () => {
 
     if (
+        !panelActualizando &&
         localStorage.getItem("kimbos_admin_token") &&
         !document.querySelector(".modal.show") &&
         document.visibilityState === "visible" &&
         !document.activeElement?.closest?.("#listaPedidosAdmin") &&
         typeof cargarPedidosAdmin === "function"
     ) {
-        cargarPedidosAdmin(true);
+        panelActualizando = true;
+
+        try {
+            await cargarPedidosAdmin(true);
+        } finally {
+            panelActualizando = false;
+        }
     }
 
-}, 30000);
+}, 5000);
 
 
 
@@ -3440,6 +3465,12 @@ const MODULOS_PEDIDOS = {
         nombre: "Entregados",
         estados: ["ENTREGADO"],
         guia: "Pedidos finalizados, del más reciente al más antiguo."
+    },
+    CANCELADOS: {
+        paso: null,
+        nombre: "Cancelados",
+        estados: ["CANCELADO"],
+        guia: "Pedidos cancelados por el cliente o por la tienda."
     }
 };
 
@@ -3496,7 +3527,13 @@ function mostrarModuloPedidos(pedidos) {
     const modulo = MODULOS_PEDIDOS[moduloPedidos];
     const delModulo = pedidosDelModulo(pedidos, moduloPedidos);
 
-    document.querySelectorAll(".modulo-paso").forEach((boton) => {
+    const totalCancelados = document.getElementById("totalCancelados");
+
+    if (totalCancelados) {
+        totalCancelados.textContent = pedidosDelModulo(pedidos, "CANCELADOS").length;
+    }
+
+    document.querySelectorAll("[data-modulo]").forEach((boton) => {
         const activo = boton.dataset.modulo === moduloPedidos;
         boton.classList.toggle("activo", activo);
         boton.setAttribute("aria-selected", activo ? "true" : "false");
@@ -3504,7 +3541,7 @@ function mostrarModuloPedidos(pedidos) {
 
     document.getElementById("tituloModulo").innerHTML = `
         <div>
-            <strong>Paso ${modulo.paso} · ${modulo.nombre}</strong>
+            <strong>${modulo.paso ? `Paso ${modulo.paso} · ` : ""}${modulo.nombre}</strong>
             <span class="titulo-modulo-cantidad">${delModulo.length} pedido(s)</span>
         </div>
         <div class="titulo-modulo-guia">${modulo.guia}</div>
@@ -3527,7 +3564,7 @@ function mostrarModuloPedidos(pedidos) {
 
 document.addEventListener("click", (evento) => {
 
-    const boton = evento.target.closest(".modulo-paso");
+    const boton = evento.target.closest("[data-modulo]");
 
     if (!boton) {
         return;
@@ -3537,3 +3574,68 @@ document.addEventListener("click", (evento) => {
     guardarModulo(moduloPedidos);
     mostrarModuloPedidos(pedidosAdminCache);
 });
+
+
+
+/* ========================================================
+   CANCELAR PEDIDO (admin / operador)
+   Antes de enviarlo a reparto, con un motivo.
+======================================================== */
+
+function htmlCancelarAdmin(pedido) {
+
+    if (!["REGISTRADO", "PREPARANDO"].includes(pedido.estado?.codigo)) {
+        return "";
+    }
+
+    return `
+        <button
+            class="btn btn-link btn-sm text-danger w-100 mt-1"
+            type="button"
+            onclick="cancelarPedidoAdmin(${pedido.id}, '${escaparHtmlAdmin(pedido.codigo)}', this)"
+        >
+            🚫 Cancelar pedido
+        </button>
+    `;
+}
+
+
+async function cancelarPedidoAdmin(pedidoId, codigo, boton) {
+
+    const motivo = prompt(`Motivo de la cancelación del pedido ${codigo}:`);
+
+    if (motivo === null) {
+        return;
+    }
+
+    if (motivo.trim().length < 3) {
+        alert("Escribe el motivo de la cancelación.");
+        return;
+    }
+
+    boton.disabled = true;
+
+    try {
+
+        const respuesta = await fetch(`/api/pedidos/${pedidoId}/cancelar`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("kimbos_admin_token")}`
+            },
+            body: JSON.stringify({ motivo: motivo.trim() })
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos.ok) {
+            throw new Error(datos.mensaje || "No se pudo cancelar el pedido.");
+        }
+
+        await cargarPedidosAdmin(true);
+
+    } catch (error) {
+        alert(error.message);
+        boton.disabled = false;
+    }
+}

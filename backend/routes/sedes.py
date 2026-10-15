@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
 
 from db import get_connection
+from backend.horario import estado_horario
 
 
 sedes_bp = Blueprint(
@@ -49,5 +50,6 @@ def obtener_sede_activa():
             "latitud": float(sede[4]),
             "longitud": float(sede[5]),
             "telefono": sede[6]
-        }
+        },
+        "horario": estado_horario()
     })
