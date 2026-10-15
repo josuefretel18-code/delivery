@@ -21,6 +21,7 @@ corte por presupuesto mensual.
 import json
 import os
 import time
+from datetime import date
 from decimal import Decimal
 
 from db import get_connection
@@ -484,8 +485,97 @@ def _json(valor):
     return json.dumps(valor, ensure_ascii=False)
 
 
-def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
-    """Genera (o regenera) el reporte de un dia y lo devuelve."""
+# =========================================================
+# FLUJO SECUENCIAL EN 4 PASOS
+#
+#   0. datos     -> el sistema calcula los indicadores (SQL)
+#   1. analista  -> Agente Analista de datos: hallazgos (JSON)
+#   2. estratega -> Agente Estratega: plan con prioridades y horarios
+#   3. redactor  -> Agente Redactor: titulo, calificacion y resumen
+#
+# Cada paso lee de la BD lo que dejo el anterior y guarda su
+# resultado; el servidor rechaza un paso si el anterior no termino.
+# El panel los llama uno por uno (muestra el progreso) y Cloud
+# Scheduler los ejecuta en orden con generar_reporte_diario().
+# =========================================================
+
+PASOS = ("datos", "analista", "estratega", "redactor")
+
+
+class PasoFueraDeOrden(Exception):
+    """Se pidio un paso antes de terminar el anterior."""
+
+
+def _actualizar_reporte(fecha, costo=0.0, duracion_ms=0, **campos):
+    """Actualiza un reporte existente y suma costo y duracion del paso."""
+
+    columnas = ", ".join(f"{columna} = %s" for columna in campos)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE reportes_diarios
+                SET {columnas}{", " if columnas else ""}
+                    costo_usd = COALESCE(costo_usd, 0) + %s,
+                    duracion_ms = COALESCE(duracion_ms, 0) + %s,
+                    fecha_generacion = NOW()
+                WHERE fecha_reporte = %s;
+            """, [*campos.values(), Decimal(str(round(costo, 6))), int(duracion_ms), fecha])
+
+
+def _verificar_llm():
+
+    if not llm_configurado():
+        raise RuntimeError("Falta OPENAI_API_KEY: no se puede generar el reporte.")
+
+    if gasto_mes_usd() >= configuracion()["corte_automatizacion_usd"]:
+        raise RuntimeError("Presupuesto mensual del LLM alcanzado: reporte omitido.")
+
+
+def _reporte_para_paso(fecha, paso):
+    """El reporte en curso, verificando que el paso anterior termino."""
+
+    reporte = obtener_reporte(fecha)
+    numero = PASOS.index(paso)
+
+    if not reporte or reporte["estado"] in ("LISTO", "SIN_DATOS"):
+        raise PasoFueraDeOrden("Primero genera los datos del día (paso 0).")
+
+    if (reporte.get("etapa") if reporte.get("etapa") is not None else -1) < numero - 1:
+        raise PasoFueraDeOrden(
+            f"El paso {numero} necesita que termine el paso {numero - 1} ({PASOS[numero - 1]})."
+        )
+
+    return reporte
+
+
+def _ejecutar_paso(fecha, paso, agente, datos):
+    """Ejecuta un agente, guarda costo y duracion, y marca el error si
+    falla (el paso se puede reintentar)."""
+
+    _verificar_llm()
+
+    costos = []
+    inicio = time.monotonic()
+
+    try:
+        resultado = _ejecutar(agente, datos, costos, "REPORTE")
+
+    except Exception as error:
+        _actualizar_reporte(
+            fecha,
+            costo=sum(costos),
+            duracion_ms=(time.monotonic() - inicio) * 1000,
+            estado="ERROR",
+            error=f"Paso {PASOS.index(paso)} ({paso}): {type(error).__name__}: {error}"[:300],
+        )
+        raise
+
+    return resultado, sum(costos), (time.monotonic() - inicio) * 1000
+
+
+def paso_datos(fecha=None, origen="MANUAL"):
+    """Paso 0: indicadores del dia (sin LLM). Reinicia el reporte."""
 
     asegurar_tabla_alertas()
     asegurar_tabla_reportes()
@@ -498,6 +588,7 @@ def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
         _guardar_reporte(
             fecha, origen,
             estado="SIN_DATOS",
+            etapa=3,
             metricas=_json(metricas),
             hallazgos=_json([{
                 "tipo": "NEUTRO",
@@ -517,87 +608,144 @@ def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
         )
         return obtener_reporte(fecha)
 
-    if not llm_configurado():
-        raise RuntimeError("Falta OPENAI_API_KEY: no se puede generar el reporte.")
+    _verificar_llm()
 
-    if gasto_mes_usd() >= configuracion()["corte_automatizacion_usd"]:
-        raise RuntimeError("Presupuesto mensual del LLM alcanzado: reporte omitido.")
-
+    # Se borran los resultados anteriores: los agentes los rehacen
     _guardar_reporte(
         fecha, origen,
         estado="PROCESANDO",
+        etapa=0,
         metricas=_json(metricas),
-        error=None,
-    )
-
-    costos = []
-    inicio = time.monotonic()
-
-    try:
-        analisis = _ejecutar(
-            AGENTE_ANALISTA_DATOS,
-            {"indicadores_del_dia": metricas},
-            costos, "REPORTE",
-        )
-
-        estrategia = _ejecutar(AGENTE_ESTRATEGA, {
-            "indicadores_del_dia": metricas,
-            "hallazgos": analisis["hallazgos"],
-        }, costos, "REPORTE")
-
-        reporte = _ejecutar(AGENTE_REDACTOR, {
-            "fecha": fecha.strftime("%d/%m/%Y"),
-            "indicadores_del_dia": metricas,
-            "hallazgos": analisis["hallazgos"],
-            "recomendaciones": estrategia["recomendaciones"],
-            "repartidores_sugeridos": estrategia["repartidores_sugeridos"],
-            "franja_refuerzo": estrategia["franja_refuerzo"],
-        }, costos, "REPORTE")
-
-    except Exception as error:
-        _guardar_reporte(
-            fecha, origen,
-            estado="ERROR",
-            costo_usd=Decimal(str(round(sum(costos), 6))),
-            duracion_ms=int((time.monotonic() - inicio) * 1000),
-            error=f"{type(error).__name__}: {error}"[:300],
-        )
-        raise
-
-    _guardar_reporte(
-        fecha, origen,
-        estado="LISTO",
-        hallazgos=_json(analisis["hallazgos"][:6]),
-        recomendaciones=_json(estrategia["recomendaciones"][:3]),
-        repartidores_sugeridos=max(1, min(int(estrategia["repartidores_sugeridos"]), 6)),
-        franja_refuerzo=(estrategia.get("franja_refuerzo") or "")[:60] or None,
-        titulo=reporte["titulo"][:200],
-        calificacion=reporte["calificacion"],
-        resumen=reporte["resumen"],
-        conclusion=reporte["conclusion"],
-        costo_usd=Decimal(str(round(sum(costos), 6))),
-        duracion_ms=int((time.monotonic() - inicio) * 1000),
+        hallazgos=None,
+        recomendaciones=None,
+        repartidores_sugeridos=None,
+        franja_refuerzo=None,
+        titulo=None,
+        calificacion=None,
+        resumen=None,
+        conclusion=None,
+        costo_usd=Decimal("0"),
+        duracion_ms=0,
         error=None,
     )
 
     return obtener_reporte(fecha)
 
 
+def paso_analista(fecha):
+    """Paso 1: el Agente Analista recibe los indicadores (SQL) y
+    devuelve solo los hallazgos estructurados."""
+
+    reporte = _reporte_para_paso(fecha, "analista")
+
+    analisis, costo, duracion = _ejecutar_paso(fecha, "analista", AGENTE_ANALISTA_DATOS, {
+        "indicadores_del_dia": reporte["metricas"],
+    })
+
+    _actualizar_reporte(
+        fecha, costo=costo, duracion_ms=duracion,
+        estado="PROCESANDO",
+        etapa=1,
+        hallazgos=_json(analisis["hallazgos"][:6]),
+        error=None,
+    )
+
+    return obtener_reporte(fecha)
+
+
+def paso_estratega(fecha):
+    """Paso 2: el Agente Estratega recibe los hallazgos del Analista
+    (y los indicadores como referencia) y arma el plan para manana."""
+
+    reporte = _reporte_para_paso(fecha, "estratega")
+
+    estrategia, costo, duracion = _ejecutar_paso(fecha, "estratega", AGENTE_ESTRATEGA, {
+        "hallazgos": reporte["hallazgos"],
+        "indicadores_del_dia": reporte["metricas"],
+    })
+
+    _actualizar_reporte(
+        fecha, costo=costo, duracion_ms=duracion,
+        estado="PROCESANDO",
+        etapa=2,
+        recomendaciones=_json(estrategia["recomendaciones"][:3]),
+        repartidores_sugeridos=max(1, min(int(estrategia["repartidores_sugeridos"]), 6)),
+        franja_refuerzo=(estrategia.get("franja_refuerzo") or "")[:60] or None,
+        error=None,
+    )
+
+    return obtener_reporte(fecha)
+
+
+def paso_redactor(fecha):
+    """Paso 3: el Agente Redactor recibe todo lo anterior y escribe el
+    titulo, la calificacion del dia, el resumen y la conclusion."""
+
+    reporte = _reporte_para_paso(fecha, "redactor")
+
+    redaccion, costo, duracion = _ejecutar_paso(fecha, "redactor", AGENTE_REDACTOR, {
+        "fecha": fecha.strftime("%d/%m/%Y"),
+        "indicadores_del_dia": reporte["metricas"],
+        "hallazgos": reporte["hallazgos"],
+        "recomendaciones": reporte["recomendaciones"],
+        "repartidores_sugeridos": reporte["repartidores_sugeridos"],
+        "franja_refuerzo": reporte["franja_refuerzo"],
+    })
+
+    _actualizar_reporte(
+        fecha, costo=costo, duracion_ms=duracion,
+        estado="LISTO",
+        etapa=3,
+        titulo=redaccion["titulo"][:200],
+        calificacion=redaccion["calificacion"],
+        resumen=redaccion["resumen"],
+        conclusion=redaccion["conclusion"],
+        error=None,
+    )
+
+    return obtener_reporte(fecha)
+
+
+EJECUTAR_PASO = {
+    "analista": paso_analista,
+    "estratega": paso_estratega,
+    "redactor": paso_redactor,
+}
+
+
+def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
+    """Los 4 pasos en orden (lo usa Cloud Scheduler a las 23:00)."""
+
+    reporte = paso_datos(fecha, origen)
+
+    if reporte["estado"] == "SIN_DATOS":
+        return reporte
+
+    fecha = date.fromisoformat(reporte["fecha"])
+
+    paso_analista(fecha)
+    paso_estratega(fecha)
+
+    return paso_redactor(fecha)
+
+
 _COLUMNAS = """
     fecha_reporte, fecha_generacion, origen, estado, metricas,
     hallazgos, recomendaciones, repartidores_sugeridos, titulo,
     resumen, costo_usd, duracion_ms, error,
-    calificacion, conclusion, franja_refuerzo
+    calificacion, conclusion, franja_refuerzo, etapa
 """
 
 
 def _fila_a_reporte(fila):
 
+    estado = fila[3]
+
     return {
         "fecha": fila[0].isoformat(),
         "generado": fila[1].isoformat() if fila[1] else None,
         "origen": fila[2],
-        "estado": fila[3],
+        "estado": estado,
         "metricas": json.loads(fila[4]) if fila[4] else None,
         "hallazgos": json.loads(fila[5]) if fila[5] else [],
         "recomendaciones": json.loads(fila[6]) if fila[6] else [],
@@ -610,6 +758,8 @@ def _fila_a_reporte(fila):
         "calificacion": fila[13],
         "conclusion": fila[14],
         "franja_refuerzo": fila[15],
+        # Reportes anteriores a los pasos: terminados = etapa 3
+        "etapa": fila[16] if fila[16] is not None else (3 if estado in ("LISTO", "SIN_DATOS") else None),
     }
 
 

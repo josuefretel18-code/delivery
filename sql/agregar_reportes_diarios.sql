@@ -47,3 +47,7 @@ CREATE TABLE IF NOT EXISTS reportes_diarios (
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS calificacion VARCHAR(10);
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS conclusion TEXT;
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS franja_refuerzo VARCHAR(60);
+
+-- Flujo en pasos: ultimo paso terminado (0 datos, 1 analista,
+-- 2 estratega, 3 redactor).
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS etapa SMALLINT;

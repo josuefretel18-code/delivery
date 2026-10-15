@@ -6,7 +6,13 @@ from flask import Blueprint, jsonify, request
 
 from backend.decorators import roles_required
 from backend.agentes_automaticos import generar_alerta_pedido
-from backend.agente_reporte import generar_reporte_diario, listar_reportes
+from backend.agente_reporte import (
+    EJECUTAR_PASO,
+    PasoFueraDeOrden,
+    generar_reporte_diario,
+    listar_reportes,
+    paso_datos,
+)
 from backend.llm_agente import llm_configurado
 
 
@@ -131,3 +137,51 @@ def ver_reportes():
             "ok": False,
             "mensaje": "No se pudieron leer los reportes. Inténtalo en unos minutos."
         }), 500
+
+
+@automatizacion_bp.post("/reportes/pasos/<paso>")
+@roles_required("ADMIN", "OPERADOR")
+def ejecutar_paso_reporte(paso):
+    """Un paso del reporte (datos, analista, estratega, redactor). El
+    panel los llama en orden para mostrar el avance de cada agente."""
+
+    datos = request.get_json(silent=True) or {}
+
+    try:
+        fecha = (
+            date.fromisoformat(datos["fecha"])
+            if datos.get("fecha")
+            else None
+        )
+    except ValueError:
+        return jsonify({"ok": False, "mensaje": "Fecha invalida (AAAA-MM-DD)"}), 400
+
+    if paso != "datos" and paso not in EJECUTAR_PASO:
+        return jsonify({"ok": False, "mensaje": "Paso no valido"}), 404
+
+    if paso != "datos" and fecha is None:
+        return jsonify({"ok": False, "mensaje": "Indica la fecha del reporte"}), 400
+
+    try:
+        reporte = (
+            paso_datos(fecha, origen="MANUAL")
+            if paso == "datos"
+            else EJECUTAR_PASO[paso](fecha)
+        )
+
+    except PasoFueraDeOrden as error:
+        return jsonify({"ok": False, "mensaje": str(error)}), 409
+
+    except Exception as error:
+        print(f"[AGENTES] Paso {paso}: {type(error).__name__}: {error}", flush=True)
+
+        return jsonify({
+            "ok": False,
+            "mensaje": (
+                str(error)
+                if isinstance(error, RuntimeError)
+                else "El agente no pudo completar este paso. Puedes reintentarlo."
+            )
+        }), 500
+
+    return jsonify({"ok": True, "paso": paso, "reporte": reporte})
