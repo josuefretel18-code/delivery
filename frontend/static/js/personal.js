@@ -1,5 +1,5 @@
 /* ========================================================
-   PERSONAL (solo ADMIN) Y CAMBIO DE CONTRASEÑA
+   PERSONAL Y CLIENTES (solo ADMIN) Y CAMBIO DE CONTRASEÑA
    - Crear administradores u operadores, activarlos o
      desactivarlos y restablecer su contraseña.
    - Cualquier miembro del personal cambia su contraseña.
@@ -166,6 +166,82 @@
     }
 
 
+    /* ---------- Clientes registrados (solo lectura) ---------- */
+
+    const soles = (monto) => `S/ ${Number(monto || 0).toFixed(2)}`;
+
+    function fechaCorta(iso) {
+        return iso
+            ? new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })
+            : "—";
+    }
+
+    let busquedaClientes = null;
+
+    async function cargarClientes() {
+
+        const contenedor = document.getElementById("listaClientes");
+        const buscar = document.getElementById("buscarCliente").value.trim();
+
+        try {
+
+            const { clientes, total } = await pedir(
+                `/api/personal/clientes?buscar=${encodeURIComponent(buscar)}`
+            );
+
+            const conCompras = clientes.filter((c) => c.entregados > 0).length;
+
+            document.getElementById("resumenClientes").textContent = buscar
+                ? `${clientes.length} resultado(s) de ${total} clientes registrados.`
+                : `${total} clientes registrados · ${conCompras} con al menos una compra entregada.`;
+
+            if (!clientes.length) {
+                contenedor.innerHTML = `<p class="text-secondary">No hay clientes que coincidan.</p>`;
+                return;
+            }
+
+            contenedor.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Cliente</th><th>Teléfono</th><th>Registrado</th>
+                                <th class="text-end">Pedidos</th><th class="text-end">Comprado</th>
+                                <th>Último pedido</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${clientes.map((c) => `
+                                <tr class="${c.activo ? "" : "text-secondary"}">
+                                    <td>
+                                        <strong>${escapar(c.nombre)}</strong>
+                                        ${c.activo ? "" : `<span class="badge bg-secondary ms-1">Inactivo</span>`}
+                                        <div class="small text-secondary">${escapar(c.correo)}</div>
+                                    </td>
+                                    <td>${escapar(c.telefono || "—")}</td>
+                                    <td>${fechaCorta(c.registrado)}</td>
+                                    <td class="text-end">
+                                        ${c.pedidos}
+                                        <div class="small text-secondary">${c.entregados} entregado(s)</div>
+                                    </td>
+                                    <td class="text-end fw-semibold">${soles(c.total_comprado)}</td>
+                                    <td>${c.ultimo_pedido ? fechaCorta(c.ultimo_pedido) : `<span class="text-secondary">Sin pedidos</span>`}</td>
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small text-secondary mb-0">
+                    “Comprado” suma solo los pedidos entregados. Los cancelados no se cuentan.
+                </p>
+            `;
+
+        } catch (error) {
+            contenedor.innerHTML = `<div class="alert alert-danger">${escapar(error.message)}</div>`;
+        }
+    }
+
+
     /* ---------- Mi contraseña ---------- */
 
     async function cambiarMiPassword(evento) {
@@ -202,18 +278,18 @@
     }
 
 
-    /* ---------- Solo el ADMIN ve "Personal" ---------- */
+    /* ---------- Solo el ADMIN ve "Personal" y "Clientes" ---------- */
 
     function mostrarSegunRol() {
 
-        const boton = document.getElementById("btnPersonal");
+        const esAdmin = typeof usuarioAdmin !== "undefined" && usuarioAdmin && usuarioAdmin.rol === "ADMIN";
 
-        if (boton) {
-            boton.classList.toggle(
-                "d-none",
-                !(typeof usuarioAdmin !== "undefined" && usuarioAdmin && usuarioAdmin.rol === "ADMIN")
-            );
-        }
+        ["btnPersonal", "btnClientes"].forEach((id) => {
+            const boton = document.getElementById(id);
+            if (boton) {
+                boton.classList.toggle("d-none", !esAdmin);
+            }
+        });
     }
 
 
@@ -230,6 +306,23 @@
 
         if (formularioPersonal) {
             formularioPersonal.addEventListener("submit", crearPersonal);
+        }
+
+        const modalClientes = document.getElementById("modalClientes");
+
+        if (modalClientes) {
+
+            modalClientes.addEventListener("show.bs.modal", () => {
+                document.getElementById("buscarCliente").value = "";
+                document.getElementById("listaClientes").innerHTML = `<p class="text-secondary">Cargando...</p>`;
+                cargarClientes();
+            });
+
+            // Busca mientras se escribe (espera a que se deje de teclear)
+            document.getElementById("buscarCliente").addEventListener("input", () => {
+                clearTimeout(busquedaClientes);
+                busquedaClientes = setTimeout(cargarClientes, 350);
+            });
         }
 
         if (modalPassword) {

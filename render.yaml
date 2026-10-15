@@ -12,8 +12,10 @@ services:
     branch: main
     buildCommand: pip install -r requirements.txt
     # 1 proceso (el plan free tiene 512 MB; Flask + modelo usa ~140 MB)
-    # y 4 hilos para atender peticiones en paralelo.
-    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    # y 8 hilos: la actualizacion cada 5 s y los agentes LLM (8-18 s por
+    # llamada) ocupan hilos; con 4 se llenaban, el chequeo de salud no
+    # respondia y Render reiniciaba el servidor. El pool de BD es de 10.
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
     healthCheckPath: /api/health
     envVars:
       # Secretos: se ingresan en el panel de Render (no se suben a Git).

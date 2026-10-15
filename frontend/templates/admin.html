@@ -29,6 +29,15 @@
 
     <script src="{{ url_for('static', filename='js/respuestas_json.js') }}"></script>
 
+    <script>
+        // Con sesion guardada no se muestra el login mientras se verifica.
+        try {
+            if (localStorage.getItem("kimbos_admin_token")) {
+                document.documentElement.classList.add("verificando-sesion");
+            }
+        } catch (error) {}
+    </script>
+
 </head>
 
 
@@ -255,6 +264,16 @@
         data-bs-target="#modalPersonal"
     >
         👥 Personal
+    </button>
+
+    <button
+        id="btnClientes"
+        class="btn btn-outline-dark d-none"
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#modalClientes"
+    >
+        👤 Clientes
     </button>
 
 
@@ -1083,6 +1102,39 @@
                 </form>
 
                 <div id="listaPersonal"><p class="text-secondary">Cargando...</p></div>
+
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="modalClientes" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content modal-productos-admin">
+
+            <div class="modal-header">
+                <div>
+                    <h4 class="fw-bold mb-1">Clientes registrados</h4>
+                    <p class="text-secondary mb-0" id="resumenClientes">
+                        Quiénes se registraron en la tienda y cuánto han comprado.
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <input
+                    id="buscarCliente"
+                    type="search"
+                    class="form-control mb-3"
+                    placeholder="Buscar por nombre, correo o teléfono"
+                    autocomplete="off"
+                >
+
+                <div id="listaClientes"><p class="text-secondary">Cargando...</p></div>
 
             </div>
 

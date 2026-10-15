@@ -247,6 +247,13 @@ async function cargarPerfilAdmin() {
 
 
         if (!respuesta.ok) {
+
+            // 401/403: la sesion no sirve. Otro codigo (BD o servidor
+            // ocupado) es un fallo pasajero: la sesion sigue siendo valida.
+            perfilFalloTemporal =
+                respuesta.status !== 401 &&
+                respuesta.status !== 403;
+
             return false;
         }
 
@@ -276,6 +283,9 @@ async function cargarPerfilAdmin() {
 
     } catch {
 
+        // Sin internet o respuesta cortada
+        perfilFalloTemporal = true;
+
         return false;
 
     }
@@ -283,17 +293,59 @@ async function cargarPerfilAdmin() {
 }
 
 
+// true si la ultima verificacion fallo por red o servidor (no por la sesion)
+let perfilFalloTemporal = false;
+
+
 async function verificarAdminGuardado() {
 
-    const correcto =
-        await cargarPerfilAdmin();
+    try {
 
+        if (!localStorage.getItem("kimbos_admin_token")) {
+            return;
+        }
 
-    if (correcto) {
+        // Un fallo pasajero no debe mandar al login: se reintenta.
+        for (let intento = 1; intento <= 4; intento++) {
 
-        mostrarPanelAdmin();
+            perfilFalloTemporal = false;
 
-        await cargarPedidosAdmin();
+            if (await cargarPerfilAdmin()) {
+
+                mostrarPanelAdmin();
+
+                await cargarPedidosAdmin();
+
+                return;
+            }
+
+            if (!perfilFalloTemporal) {
+
+                // Sesion vencida o sin permisos
+                localStorage.removeItem("kimbos_admin_token");
+
+                return;
+            }
+
+            await new Promise(
+                (listo) => setTimeout(listo, intento * 1500)
+            );
+        }
+
+        const mensaje =
+            document.getElementById("mensajeAdminLogin");
+
+        mensaje.textContent =
+            "No se pudo conectar con el servidor. Revisa tu internet y recarga la página.";
+
+        mensaje.classList.remove("d-none");
+
+    } finally {
+
+        // Fin de "Cargando panel...": se ve el panel o el login
+        document.documentElement.classList.remove(
+            "verificando-sesion"
+        );
 
     }
 
@@ -305,6 +357,10 @@ async function verificarAdminGuardado() {
 ======================================================== */
 
 function mostrarPanelAdmin() {
+
+    document.documentElement.classList.remove(
+        "verificando-sesion"
+    );
 
     document.getElementById(
         "vistaLogin"
