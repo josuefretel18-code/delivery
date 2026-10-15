@@ -41,3 +41,9 @@ CREATE TABLE IF NOT EXISTS reportes_diarios (
     duracion_ms INTEGER,
     error VARCHAR(300)
 );
+
+-- Reporte mas especifico (version 2): calificacion del dia, conclusion
+-- y franja horaria en la que conviene reforzar repartidores.
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS calificacion VARCHAR(10);
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS conclusion TEXT;
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS franja_refuerzo VARCHAR(60);

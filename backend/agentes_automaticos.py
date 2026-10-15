@@ -188,7 +188,7 @@ def _ejecutar(agente, datos, costos, tipo="ALERTA"):
             traza,
             formato=agente["formato"],
             max_pasos=agente["max_pasos"],
-            max_tokens=600,
+            max_tokens=agente.get("max_tokens", 600),
         )
 
         resultado = json.loads(texto)

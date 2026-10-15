@@ -25,3 +25,7 @@ docs/Documento_traspaso_Kimbos_ML.md
 
 # Archivos temporales de Word (documento abierto)
 ~$*
+
+# Archivos de extensiones del editor (no son del proyecto)
+CLAUDE.md
+.claude/

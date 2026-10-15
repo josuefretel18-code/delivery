@@ -2845,37 +2845,71 @@ function htmlAlertaAgentes(pedido) {
     }
 
     const factores = (alerta.factores || [])
-        .map((factor) => `<li>${escaparHtmlAdmin(factor)}</li>`)
+        .map((factor) => `<span class="ma-chip">${escaparHtmlAdmin(factor)}</span>`)
         .join("");
 
+    const nivel = (alerta.nivel || "").toUpperCase();
+
+    const NIVEL = {
+        ALTO: ["⛔", "Riesgo alto"],
+        MEDIO: ["⚠️", "Riesgo medio"],
+        BAJO: ["✅", "Riesgo bajo"]
+    };
+
+    const [iconoNivel, textoNivel] = NIVEL[nivel] || ["ℹ️", `Riesgo ${nivel || "--"}`];
+
+    const prob = pedido.prediccion_ml?.probabilidad_porcentaje;
+
     return `
-        <div class="alerta-agentes nivel-${escaparHtmlAdmin((alerta.nivel || "").toLowerCase())}">
+        <div class="ma-caja ma-${nivel.toLowerCase()}">
 
-            <div class="d-flex justify-content-between align-items-center gap-2">
-                <div class="alerta-agentes-titulo">🤖 Análisis multiagente</div>
-                <span class="badge alerta-agentes-nivel">Riesgo ${escaparHtmlAdmin(alerta.nivel || "--")}</span>
+            <div class="ma-cabecera">
+                <div>
+                    <div class="ma-titulo">🤖 Análisis multiagente</div>
+                    <div class="ma-subtitulo">
+                        ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
+                        · 3 agentes en cadena
+                    </div>
+                </div>
+                <div class="ma-nivel">
+                    <span>${iconoNivel} ${textoNivel}</span>
+                    ${prob !== undefined && prob !== null ? `<small>${Number(prob).toFixed(1)} % según el modelo ML</small>` : ""}
+                </div>
             </div>
 
-            <div class="alerta-agentes-paso">
-                <strong>1 · Analista:</strong> ${escaparHtmlAdmin(alerta.causa)}
-                ${factores ? `<ul class="mb-0">${factores}</ul>` : ""}
-            </div>
+            <ol class="ma-linea">
 
-            <div class="alerta-agentes-paso">
-                <strong>2 · Operaciones:</strong>
-                ${escaparHtmlAdmin(ACCIONES_AGENTES[alerta.accion] || alerta.accion)}
-                ${alerta.minutos_extra ? `(+${alerta.minutos_extra} min)` : ""}
-                <div class="text-secondary">${escaparHtmlAdmin(alerta.justificacion)}</div>
-            </div>
+                <li class="ma-paso">
+                    <span class="ma-icono">🔍</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">1 · Agente Analista <span>· encuentra la causa</span></div>
+                        <div class="ma-texto">${escaparHtmlAdmin(alerta.causa)}</div>
+                        ${factores ? `<div class="ma-chips">${factores}</div>` : ""}
+                    </div>
+                </li>
 
-            <div class="alerta-agentes-paso">
-                <strong>3 · Comunicador</strong> (aviso al cliente):
-                <em>“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</em>
-            </div>
+                <li class="ma-paso">
+                    <span class="ma-icono">⚙️</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">2 · Agente de Operaciones <span>· decide la acción</span></div>
+                        <div class="ma-accion">
+                            ${escaparHtmlAdmin(ACCIONES_AGENTES[alerta.accion] || alerta.accion)}
+                            ${alerta.minutos_extra ? `<span class="ma-min">+${alerta.minutos_extra} min</span>` : ""}
+                        </div>
+                        <div class="ma-texto ma-secundario">${escaparHtmlAdmin(alerta.justificacion)}</div>
+                    </div>
+                </li>
 
-            <div class="alerta-agentes-pie">
-                ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
-            </div>
+                <li class="ma-paso">
+                    <span class="ma-icono">💬</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">3 · Agente Comunicador <span>· avisa al cliente</span></div>
+                        <div class="ma-mensaje">“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</div>
+                        <div class="ma-texto ma-secundario">Para el admin: ${escaparHtmlAdmin(alerta.resumen_admin)}</div>
+                    </div>
+                </li>
+
+            </ol>
 
             ${boton}
         </div>
