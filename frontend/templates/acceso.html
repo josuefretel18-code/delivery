@@ -49,20 +49,42 @@
             color: #ff6b00;
         }
 
-        .acceso-roles {
-            display: flex;
-            gap: 8px;
-            margin: 14px 0 18px;
-            font-size: 0.8rem;
-            color: #52514e;
+        /* Selector de rol (pildora con icono) */
+        .selector-rol {
+            position: relative;
+            margin: 16px 0 18px;
         }
 
-        .acceso-roles div {
-            flex: 1;
-            padding: 8px;
-            border-radius: 10px;
-            background: #f5f6f7;
-            text-align: center;
+        .selector-rol .icono {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.05rem;
+            pointer-events: none;
+        }
+
+        .selector-rol select {
+            width: 100%;
+            height: 52px;
+            padding: 0 44px 0 50px;
+            border: 1px solid #d9d9d9;
+            border-radius: 999px;
+            background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 18px center / 14px 14px;
+            appearance: none;
+            font-size: 1rem;
+            color: #343a40;
+            cursor: pointer;
+        }
+
+        .selector-rol select:focus {
+            outline: none;
+            border-color: #ff6b00;
+            box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.18);
+        }
+
+        .selector-rol select:invalid {
+            color: #6c757d;
         }
     </style>
 
@@ -78,12 +100,16 @@
             Ingreso para administradores, operadores y repartidores.
         </p>
 
-        <div class="acceso-roles">
-            <div>🗂️ Administración<br>y operación</div>
-            <div>🛵 Repartidores</div>
-        </div>
-
         <form id="formAcceso">
+
+            <div class="selector-rol">
+                <span class="icono" id="iconoRol">📦</span>
+                <select id="rol" required aria-label="Rol">
+                    <option value="" selected disabled>Seleccione un Rol</option>
+                    <option value="ADMIN">Administración / Operación</option>
+                    <option value="REPARTIDOR">Repartidor</option>
+                </select>
+            </div>
 
             <label class="form-label fw-semibold" for="correo">Correo</label>
             <input
@@ -121,6 +147,18 @@
         /* Un solo ingreso para el personal: el sistema detecta el rol
            de la cuenta y lleva a cada uno a su panel. */
 
+        const ICONOS = { "": "📦", ADMIN: "🗂️", REPARTIDOR: "🛵" };
+
+        // Roles de cuenta que corresponden a cada opcion del selector
+        const ROLES_PERMITIDOS = {
+            ADMIN: ["ADMIN", "OPERADOR"],
+            REPARTIDOR: ["REPARTIDOR"]
+        };
+
+        document.getElementById("rol").addEventListener("change", (evento) => {
+            document.getElementById("iconoRol").textContent = ICONOS[evento.target.value] || "📦";
+        });
+
         const DESTINOS = {
             ADMIN: ["kimbos_admin_token", "/admin"],
             OPERADOR: ["kimbos_admin_token", "/admin"],
@@ -155,6 +193,19 @@
 
                 if (!respuesta.ok || !datos.ok) {
                     throw new Error(datos.mensaje || "Correo o contraseña incorrectos.");
+                }
+
+                const rolElegido = document.getElementById("rol").value;
+
+                if (!(ROLES_PERMITIDOS[rolElegido] || []).includes(datos.usuario.rol)) {
+
+                    mostrarMensaje(
+                        DESTINOS[datos.usuario.rol]
+                            ? "Esta cuenta no corresponde al rol seleccionado."
+                            : 'Esta página es solo para el personal. Para hacer pedidos, ingresa desde <a href="/">la tienda</a>.',
+                        "warning"
+                    );
+                    return;
                 }
 
                 const destino = DESTINOS[datos.usuario.rol];

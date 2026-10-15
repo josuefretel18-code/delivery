@@ -30,6 +30,9 @@ def usar_pool(minimo=1, maximo=6):
         max_idle=180,
         max_lifetime=900,
         timeout=20,
+        # Antes de entregar una conexion se comprueba que siga viva (la
+        # BD puede cerrar las inactivas); si no, se reemplaza por otra.
+        check=ConnectionPool.check_connection,
         kwargs={
             "connect_timeout": 10,
             "keepalives": 1,

@@ -87,7 +87,7 @@ async function cargarSede() {
    CATÁLOGO
 ======================================================== */
 
-async function cargarCatalogo() {
+async function cargarCatalogo(intento = 1) {
 
     const contenedor =
         document.getElementById(
@@ -116,10 +116,27 @@ async function cargarCatalogo() {
 
     } catch (error) {
 
+        // Un fallo momentaneo (servidor despertando o reiniciando):
+        // se reintenta antes de mostrar el error.
+        if (intento < 3) {
+            setTimeout(
+                () => cargarCatalogo(intento + 1),
+                1500 * intento
+            );
+            return;
+        }
+
         contenedor.innerHTML = `
             <div class="col-12">
                 <div class="alert alert-danger">
                     No se pudo cargar el menú.
+                    <button
+                        class="btn btn-sm btn-outline-danger ms-2"
+                        type="button"
+                        onclick="cargarCatalogo()"
+                    >
+                        Reintentar
+                    </button>
                 </div>
             </div>
         `;

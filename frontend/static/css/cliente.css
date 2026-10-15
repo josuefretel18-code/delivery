@@ -708,7 +708,9 @@ body {
 
 .pie-kimbos {
     margin-top: 48px;
-    padding: 40px 0 20px;
+    /* Espacio abajo para que el boton flotante del asistente no tape
+       el enlace "Acceso para personal" */
+    padding: 40px 0 96px;
     background: #171717;
     color: #d9d9d9;
 }
