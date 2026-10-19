@@ -651,6 +651,93 @@ function matrizConfusionML(matriz) {
 }
 
 
+// Nombres con tildes para mostrar (en el entrenamiento van sin tildes)
+function nombreModeloML(nombre) {
+
+    return {
+        "Regresion Logistica": "Regresión Logística",
+        "Arbol de Decision": "Árbol de Decisión",
+        "Gradient Boosting Automatico": "Gradient Boosting Automático"
+    }[nombre] || nombre;
+}
+
+
+function htmlJustificacionModelosML(comp, modelo) {
+
+    const tarjetas = comp.modelos.map((m) => `
+        <div class="col-md-6 col-xl-4">
+            <div class="tarjeta-justificacion ${m.ganador ? "ganador" : ""}">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                    <strong>${m.posicion}. ${escaparHtmlAdmin(nombreModeloML(m.modelo))}</strong>
+                    <span class="tipo-ml tipo-ml-${m.tipo === "Automatico" ? "auto" : "manual"}">${m.tipo === "Automatico" ? "Automático" : "Manual"}</span>
+                </div>
+                <div class="small mb-2">
+                    F1 CV <strong>${m.f1_cv_promedio.toFixed(4)}</strong>
+                    · ROC-AUC ${m.roc_auc_test.toFixed(3)}
+                    ${m.ganador ? `<span class="ganador-ml">🏆 Elegido</span>` : ""}
+                </div>
+                <div class="small"><strong>Por qué lo usamos:</strong> ${escaparHtmlAdmin(m.justificacion || "")}</div>
+                <div class="small text-secondary mt-1"><strong>Hiperparámetros:</strong> ${escaparHtmlAdmin(m.hiperparametros || "")}</div>
+            </div>
+        </div>
+    `).join("");
+
+    const auto = comp.automl;
+    const ganador = comp.modelos.find((m) => m.ganador);
+    const segundo = comp.modelos.find((m) => !m.ganador);
+    const diferencia = ganador && segundo ? ganador.f1_cv_promedio - segundo.f1_cv_promedio : null;
+
+    const fecha = comp.fecha_entrenamiento_utc
+        ? new Date(comp.fecha_entrenamiento_utc).toLocaleString("es-PE")
+        : "--";
+
+    const vigenteDistinto = comp.version_vigente && modelo && comp.version_vigente !== modelo.version;
+
+    return `
+        <section class="seccion-ml">
+
+            <h5 class="fw-bold mb-1">Por qué elegimos este modelo</h5>
+
+            <p class="text-secondary small mb-3">
+                Entrenamiento ${escaparHtmlAdmin(comp.version_entrenada || "")} del ${fecha}
+                · ${comp.promovido ? "el ganador se activó" : `el ganador no superó al vigente (${escaparHtmlAdmin(comp.version_vigente || "")}) y se mantuvo el anterior`}
+                ${vigenteDistinto ? " · modelo en uso: " + escaparHtmlAdmin(comp.version_vigente) : ""}
+            </p>
+
+            <div class="alert alert-light border small mb-3">
+                <strong>Elegido: ${escaparHtmlAdmin(nombreModeloML(comp.modelo_ganador))}.</strong>
+                ${escaparHtmlAdmin(comp.criterio_seleccion || "")}
+                ${diferencia !== null
+                    ? `<br>Superó a ${escaparHtmlAdmin(nombreModeloML(segundo.modelo))} por ${diferencia.toFixed(4)} de F1: ${diferencia < 0.002 ? "una diferencia muy pequeña; los modelos de árboles rinden casi igual con estas 7 variables." : "una diferencia clara."}`
+                    : ""}
+            </div>
+
+            ${auto ? `
+                <div class="automl-ml mb-3">
+                    <div class="fw-bold mb-1">🤖 Modelo Automático vs Manual</div>
+                    <div class="small">
+                        <strong>Manual:</strong> nosotros fijamos los hiperparámetros de 4 modelos según buenas prácticas.
+                        <strong>Automático:</strong> ${escaparHtmlAdmin(auto.metodo)} probó
+                        <strong>${auto.combinaciones_probadas}</strong> combinaciones de Gradient Boosting
+                        (validación cruzada de 3 pliegues, F1 ${Number(auto.f1_busqueda_cv3).toFixed(4)}) y eligió:
+                    </div>
+                    <div class="chips-automl">
+                        ${Object.entries(auto.mejores_hiperparametros || {})
+                            .map(([clave, valor]) => `<span>${escaparHtmlAdmin(clave)} = <strong>${escaparHtmlAdmin(String(valor))}</strong></span>`)
+                            .join("")}
+                    </div>
+                </div>
+            ` : ""}
+
+            <div class="row g-3">
+                ${tarjetas}
+            </div>
+
+        </section>
+    `;
+}
+
+
 function renderizarDashboardML(datos) {
 
     const modelo = datos.modelo;
@@ -663,13 +750,31 @@ function renderizarDashboardML(datos) {
 
     if (modelo) {
 
+        const comp = datos.comparacion;
+
+        // Ultima comparacion de 5 modelos; si aun no existe, la del modelo vigente
+        const filasComparacion = comp
+            ? comp.modelos.map((m) => ({
+                modelo: m.modelo,
+                tipo: m.tipo,
+                ganador: m.ganador,
+                f1_cv: m.f1_cv_promedio,
+                accuracy: m.accuracy_test,
+                precision: m.precision_test,
+                recall: m.recall_test,
+                f1: m.f1_test,
+                roc_auc: m.roc_auc_test
+            }))
+            : modelo.comparacion.map((fila) => ({ ...fila, ganador: fila.modelo === modelo.nombre }));
+
         const comparacion =
-            modelo.comparacion
+            filasComparacion
                 .map(fila => `
-                    <tr class="${fila.modelo === modelo.nombre ? "fila-ml-seleccionada" : ""}">
+                    <tr class="${fila.ganador ? "fila-ml-seleccionada" : ""}">
                         <td>
-                            ${escaparHtmlAdmin(fila.modelo)}
-                            ${fila.modelo === modelo.nombre ? " ✓" : ""}
+                            ${escaparHtmlAdmin(nombreModeloML(fila.modelo))}
+                            ${fila.ganador ? " ✓" : ""}
+                            ${fila.tipo ? `<span class="tipo-ml tipo-ml-${fila.tipo === "Automatico" ? "auto" : "manual"}">${fila.tipo === "Automatico" ? "Automático" : "Manual"}</span>` : ""}
                         </td>
                         <td>${fila.f1_cv.toFixed(3)}</td>
                         <td>${porcentajeML(fila.accuracy)}</td>
@@ -729,7 +834,7 @@ function renderizarDashboardML(datos) {
                     </div>
 
                     <div class="col-lg-7">
-                        <h6 class="fw-bold">Comparación de modelos</h6>
+                        <h6 class="fw-bold">Comparación de ${filasComparacion.length} modelos</h6>
                         <div class="table-responsive">
                             <table class="table table-sm tabla-ml">
                                 <thead>
@@ -748,12 +853,19 @@ function renderizarDashboardML(datos) {
                                 </tbody>
                             </table>
                         </div>
+                        <p class="small text-secondary mb-0">
+                            Ordenados por F1 de validación cruzada (criterio de selección).
+                        </p>
                     </div>
 
                 </div>
 
             </section>
         `;
+
+        if (comp) {
+            html += htmlJustificacionModelosML(comp, modelo);
+        }
 
     } else {
 
@@ -2935,6 +3047,106 @@ function htmlAlertaAgentes(pedido) {
 
     const prob = pedido.prediccion_ml?.probabilidad_porcentaje;
 
+    const orq = alerta.orquestacion;
+    const evaluacion = alerta.evaluacion;
+    const conOrquestador = Boolean(orq && evaluacion);
+
+    // Nota y observacion del Evaluador para cada agente
+    const notaDe = (nombre) =>
+        (evaluacion?.agentes || []).find((a) => a.agente === nombre);
+
+    const chipNota = (nombre) => {
+        const nota = notaDe(nombre);
+        return nota
+            ? `<span class="ma-nota ${claseNota(nota.nota)}" title="Nota del Agente Evaluador">⭐ ${nota.nota.toFixed(1)}</span>`
+            : "";
+    };
+
+    const encargo = (nombre) => {
+        const texto = orq?.plan?.[`encargo_${nombre}`];
+        return texto
+            ? `<div class="ma-encargo">🧭 Encargo: ${escaparHtmlAdmin(texto)}</div>`
+            : "";
+    };
+
+    const reintentado = (nombre) =>
+        (orq?.flujo || []).some((p) => p.agente === nombre && p.detalle?.startsWith("Reintento"))
+            ? `<span class="ma-reintento" title="El Orquestador le devolvió el trabajo con la observación del Evaluador">↻ corregido</span>`
+            : "";
+
+    const PRIORIDAD = { URGENTE: "🔴 Urgente", NORMAL: "🟡 Normal", BAJA: "🟢 Baja" };
+
+    const DECISION = {
+        PUBLICAR: "📣 Publicar el aviso al cliente y al admin",
+        SOLO_ADMIN: "🗂️ Solo para el administrador (no se avisa al cliente)",
+        REINTENTAR: "↻ Reintentar"
+    };
+
+    const pasoOrquestador = conOrquestador ? `
+                <li class="ma-paso">
+                    <span class="ma-icono ma-icono-orq">🧭</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">Agente Orquestador <span>· planifica y reparte el trabajo</span></div>
+                        <div class="ma-accion">Prioridad: ${PRIORIDAD[alerta.prioridad] || escaparHtmlAdmin(alerta.prioridad || "--")}</div>
+                        <div class="ma-texto ma-secundario">${escaparHtmlAdmin(orq.plan?.razon || "")}</div>
+                    </div>
+                </li>` : "";
+
+    const filasNotas = (evaluacion?.agentes || []).map((a) => `
+                                <tr>
+                                    <td>${{ analista: "🔍 Analista", operaciones: "⚙️ Operaciones", comunicador: "💬 Comunicador" }[a.agente] || a.agente}</td>
+                                    <td>${a.precision}</td><td>${a.coherencia}</td><td>${a.utilidad}</td><td>${a.claridad}</td>
+                                    <td><strong class="${claseNota(a.nota)}">${a.nota.toFixed(1)}</strong></td>
+                                </tr>
+                                <tr class="ma-obs"><td colspan="6">${escaparHtmlAdmin(a.observacion)}</td></tr>`).join("");
+
+    const VEREDICTO = {
+        APROBADO: "✅ Aprobado",
+        OBSERVADO: "⚠️ Observado",
+        DESAPROBADO: "⛔ Desaprobado"
+    };
+
+    const pasosFinales = conOrquestador ? `
+                <li class="ma-paso">
+                    <span class="ma-icono ma-icono-eval">⭐</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">Agente Evaluador <span>· califica a los 3 agentes (1 a 10)</span></div>
+                        <div class="ma-final">
+                            Nota final <strong class="${claseNota(evaluacion.nota_final)}">${evaluacion.nota_final != null ? evaluacion.nota_final.toFixed(1) : "--"}</strong>
+                            <span>${VEREDICTO[evaluacion.veredicto] || ""}</span>
+                        </div>
+                        <details class="ma-detalle">
+                            <summary>Ver calificaciones por criterio</summary>
+                            <table class="ma-tabla">
+                                <thead><tr><th>Agente</th><th>Precisión</th><th>Coherencia</th><th>Utilidad</th><th>Claridad</th><th>Nota</th></tr></thead>
+                                <tbody>${filasNotas}</tbody>
+                            </table>
+                        </details>
+                        <div class="ma-texto ma-secundario">${escaparHtmlAdmin(evaluacion.comentario_general || "")}</div>
+                    </div>
+                </li>
+
+                <li class="ma-paso">
+                    <span class="ma-icono ma-icono-orq">🧭</span>
+                    <div class="ma-cuerpo">
+                        <div class="ma-rol">Agente Orquestador <span>· decide con la evaluación</span></div>
+                        <div class="ma-accion">${DECISION[orq.decision?.decision] || escaparHtmlAdmin(orq.decision?.decision || "")}</div>
+                        <div class="ma-texto ma-secundario">${escaparHtmlAdmin(orq.decision?.motivo || "")}</div>
+                    </div>
+                </li>` : "";
+
+    // Recorrido real del flujo con el tiempo de cada agente
+    const NOMBRE_CORTO = {
+        orquestador: "🧭 Orquestador", analista: "🔍 Analista", operaciones: "⚙️ Operaciones",
+        comunicador: "💬 Comunicador", evaluador: "⭐ Evaluador"
+    };
+
+    const recorrido = conOrquestador
+        ? `<div class="ma-flujo" title="Orden en que trabajaron los agentes">
+               ${(orq.flujo || []).map((p) => `<span>${NOMBRE_CORTO[p.agente] || p.agente}${p.ms ? ` <small>${(p.ms / 1000).toFixed(1)} s</small>` : ""}</span>`).join("<b>→</b>")}
+           </div>`
+        : "";
+
     return `
         <div class="ma-caja ma-${nivel.toLowerCase()}">
 
@@ -2943,7 +3155,7 @@ function htmlAlertaAgentes(pedido) {
                     <div class="ma-titulo">🤖 Análisis multiagente</div>
                     <div class="ma-subtitulo">
                         ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
-                        · 3 agentes en cadena
+                        · ${conOrquestador ? "5 agentes: Orquestador, 3 de automatización y Evaluador" : "3 agentes en cadena"}
                     </div>
                 </div>
                 <div class="ma-nivel">
@@ -2952,12 +3164,17 @@ function htmlAlertaAgentes(pedido) {
                 </div>
             </div>
 
+            ${recorrido}
+
             <ol class="ma-linea">
+
+                ${pasoOrquestador}
 
                 <li class="ma-paso">
                     <span class="ma-icono">🔍</span>
                     <div class="ma-cuerpo">
-                        <div class="ma-rol">1 · Agente Analista <span>· encuentra la causa</span></div>
+                        <div class="ma-rol">1 · Agente Analista <span>· encuentra la causa</span> ${chipNota("analista")} ${reintentado("analista")}</div>
+                        ${encargo("analista")}
                         <div class="ma-texto">${escaparHtmlAdmin(alerta.causa)}</div>
                         ${factores ? `<div class="ma-chips">${factores}</div>` : ""}
                     </div>
@@ -2966,7 +3183,8 @@ function htmlAlertaAgentes(pedido) {
                 <li class="ma-paso">
                     <span class="ma-icono">⚙️</span>
                     <div class="ma-cuerpo">
-                        <div class="ma-rol">2 · Agente de Operaciones <span>· decide la acción</span></div>
+                        <div class="ma-rol">2 · Agente de Operaciones <span>· decide la acción</span> ${chipNota("operaciones")} ${reintentado("operaciones")}</div>
+                        ${encargo("operaciones")}
                         <div class="ma-accion">
                             ${escaparHtmlAdmin(ACCIONES_AGENTES[alerta.accion] || alerta.accion)}
                             ${alerta.minutos_extra ? `<span class="ma-min">+${alerta.minutos_extra} min</span>` : ""}
@@ -2978,17 +3196,33 @@ function htmlAlertaAgentes(pedido) {
                 <li class="ma-paso">
                     <span class="ma-icono">💬</span>
                     <div class="ma-cuerpo">
-                        <div class="ma-rol">3 · Agente Comunicador <span>· avisa al cliente</span></div>
+                        <div class="ma-rol">3 · Agente Comunicador <span>· avisa al cliente</span> ${chipNota("comunicador")} ${reintentado("comunicador")}</div>
+                        ${encargo("comunicador")}
                         <div class="ma-mensaje">“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</div>
                         <div class="ma-texto ma-secundario">Para el admin: ${escaparHtmlAdmin(alerta.resumen_admin)}</div>
                     </div>
                 </li>
 
+                ${pasosFinales}
+
             </ol>
+
+            ${conOrquestador && alerta.costo_usd != null ? `<div class="ma-pie">Tiempo total ${((alerta.duracion_ms || 0) / 1000).toFixed(1)} s · costo USD ${Number(alerta.costo_usd).toFixed(4)}</div>` : ""}
 
             ${boton}
         </div>
     `;
+}
+
+
+// Color de la nota del Evaluador
+function claseNota(nota) {
+
+    if (nota === null || nota === undefined) {
+        return "";
+    }
+
+    return nota >= 8 ? "ma-nota-alta" : nota >= 6 ? "ma-nota-media" : "ma-nota-baja";
 }
 
 
@@ -2997,7 +3231,7 @@ async function analizarPedidoConAgentes(pedidoId, boton) {
     const token = localStorage.getItem("kimbos_admin_token");
 
     boton.disabled = true;
-    boton.textContent = "🤖 Analizando (≈15 s)…";
+    boton.textContent = "🤖 5 agentes trabajando (≈25 s)…";
 
     try {
 

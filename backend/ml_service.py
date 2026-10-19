@@ -21,6 +21,7 @@ RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
 RUTA_MODELO = RAIZ_PROYECTO / "ml" / "models" / "modelo_final.joblib"
 RUTA_METRICAS = RAIZ_PROYECTO / "ml" / "metrics" / "metricas.json"
 RUTA_HISTORIAL = RAIZ_PROYECTO / "ml" / "metrics" / "historial_modelos.json"
+RUTA_COMPARACION = RAIZ_PROYECTO / "ml" / "metrics" / "comparacion_modelos.json"
 
 # (conexion, respuesta). La API de ML se apaga sin uso y su primer
 # arranque tarda unos segundos.
@@ -109,7 +110,7 @@ def predecir_retraso(
 # =========================================================
 
 def obtener_datos_ml():
-    """{metricas, historial, estado}"""
+    """{metricas, historial, comparacion, estado}"""
 
     if ml_remoto():
 
@@ -150,6 +151,7 @@ def obtener_datos_ml():
     return {
         "metricas": leer(RUTA_METRICAS, None),
         "historial": leer(RUTA_HISTORIAL, []),
+        "comparacion": leer(RUTA_COMPARACION, None),
         "estado": estado
     }
 

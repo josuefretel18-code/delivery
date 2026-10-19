@@ -1024,15 +1024,23 @@
 
             <div class="modal-body">
 
-                <div
-                    id="filtrosDashboard"
-                    class="btn-group btn-group-sm mb-3"
-                    role="group"
-                    aria-label="Período"
-                >
-                    <button type="button" class="btn btn-outline-dark" data-periodo="1">Hoy</button>
-                    <button type="button" class="btn btn-outline-dark active" data-periodo="7">7 días</button>
-                    <button type="button" class="btn btn-outline-dark" data-periodo="30">30 días</button>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+
+                    <div
+                        id="filtrosDashboard"
+                        class="btn-group btn-group-sm"
+                        role="group"
+                        aria-label="Período"
+                    >
+                        <button type="button" class="btn btn-outline-dark" data-periodo="1">Hoy</button>
+                        <button type="button" class="btn btn-outline-dark active" data-periodo="7">7 días</button>
+                        <button type="button" class="btn btn-outline-dark" data-periodo="30">30 días</button>
+                    </div>
+
+                    <span id="dashEnVivo" class="dash-vivo" title="Se actualiza solo cada 10 segundos">
+                        <span class="dash-vivo-punto"></span> En vivo
+                    </span>
+
                 </div>
 
                 <div id="contenidoDashboard">
@@ -1129,17 +1137,10 @@
                 <input
                     id="buscarCliente"
                     type="search"
-                    class="form-control mb-2"
+                    class="form-control mb-3"
                     placeholder="Buscar por nombre, correo o teléfono"
                     autocomplete="off"
                 >
-
-                <div class="form-check form-switch mb-3">
-                    <input id="verSinteticos" class="form-check-input" type="checkbox" role="switch">
-                    <label id="etiquetaSinteticos" class="form-check-label small text-secondary" for="verSinteticos">
-                        Mostrar también las cuentas del dataset sintético del ML
-                    </label>
-                </div>
 
                 <div id="listaClientes"><p class="text-secondary">Cargando...</p></div>
 

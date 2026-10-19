@@ -20,6 +20,7 @@ from backend.routes.personal import personal_bp
 from backend.repartidores import asegurar_columna_turno
 from backend.routes.pedidos import asegurar_columnas_cancelacion, asegurar_columnas_pago
 from backend.horario import texto_horario
+from backend.agentes_automaticos import asegurar_columnas_orquestacion
 
 
 load_dotenv()
@@ -102,6 +103,7 @@ try:
     asegurar_columna_turno()
     asegurar_columnas_cancelacion()
     asegurar_columnas_pago()
+    asegurar_columnas_orquestacion()
 except Exception as error:
     print(f"[MIGRACION] Pendiente: {error}", flush=True)
 

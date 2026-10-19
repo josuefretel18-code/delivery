@@ -211,12 +211,11 @@ PATRON_SINTETICO = "%@kimbos.local"
 def listar_clientes():
     """Clientes registrados con su resumen de compras.
     ?buscar= filtra por nombre, correo o telefono.
-    ?sinteticos=1 incluye las cuentas del dataset sintetico del ML
-    (correo @kimbos.local, inactivas: no son personas reales)."""
+    No incluye las cuentas del dataset sintetico del ML (correo
+    @kimbos.local): no son personas reales."""
 
     buscar = request.args.get("buscar", "").strip()[:80]
     patron = f"%{buscar}%"
-    con_sinteticos = request.args.get("sinteticos") == "1"
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -231,13 +230,12 @@ def listar_clientes():
                     COUNT(p.id) FILTER (WHERE e.codigo <> 'CANCELADO'),
                     COUNT(p.id) FILTER (WHERE e.codigo = 'ENTREGADO'),
                     COALESCE(SUM(p.total) FILTER (WHERE e.codigo = 'ENTREGADO'), 0),
-                    MAX(p.fecha_pedido),
-                    u.correo ILIKE %s
+                    MAX(p.fecha_pedido)
                 FROM usuarios u
                 LEFT JOIN pedidos p ON p.cliente_id = u.id
                 LEFT JOIN estados_pedido e ON e.id = p.estado_id
                 WHERE u.rol = 'CLIENTE'
-                  AND (%s OR u.correo NOT ILIKE %s)
+                  AND u.correo NOT ILIKE %s
                   AND (
                       %s = ''
                       OR u.nombre_completo ILIKE %s
@@ -249,26 +247,23 @@ def listar_clientes():
                 LIMIT 300;
             """, (
                 PATRON_SINTETICO,
-                con_sinteticos, PATRON_SINTETICO,
                 buscar, patron, patron, patron,
             ))
 
             filas = cur.fetchall()
 
             cur.execute("""
-                SELECT
-                    COUNT(*) FILTER (WHERE correo NOT ILIKE %s),
-                    COUNT(*) FILTER (WHERE correo ILIKE %s)
+                SELECT COUNT(*)
                 FROM usuarios
-                WHERE rol = 'CLIENTE';
-            """, (PATRON_SINTETICO, PATRON_SINTETICO))
+                WHERE rol = 'CLIENTE'
+                  AND correo NOT ILIKE %s;
+            """, (PATRON_SINTETICO,))
 
-            total, sinteticos = cur.fetchone()
+            total = cur.fetchone()[0]
 
     return jsonify({
         "ok": True,
         "total": total,
-        "sinteticos": sinteticos,
         "clientes": [
             {
                 "id": fila[0],
@@ -281,7 +276,6 @@ def listar_clientes():
                 "entregados": fila[7],
                 "total_comprado": float(fila[8]),
                 "ultimo_pedido": fila[9].isoformat() if fila[9] else None,
-                "sintetico": fila[10],
             }
             for fila in filas
         ]

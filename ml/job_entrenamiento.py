@@ -119,6 +119,7 @@ def subir_resultados(codigo):
             almacen.MODELO,
             almacen.METRICAS,
             almacen.COMPARACION,
+            almacen.COMPARACION_JSON,
             almacen.MATRIZ,
             almacen.DATASET_INFO,
             almacen.HISTORIAL
@@ -133,9 +134,12 @@ def subir_resultados(codigo):
 
         almacen.subir(almacen.HISTORIAL)
         almacen.subir(almacen.DATASET_INFO)
+        almacen.subir(almacen.COMPARACION_JSON)
 
 
-def ejecutar_vuelta():
+def ejecutar_vuelta(forzar=False):
+    """forzar: entrena aunque no haya pedidos reales nuevos (solo la
+    primera vuelta de un reentrenamiento MANUAL)."""
 
     try:
 
@@ -145,7 +149,11 @@ def ejecutar_vuelta():
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env={
+                **os.environ,
+                "PYTHONIOENCODING": "utf-8",
+                "FORZAR_ENTRENAMIENTO": "1" if forzar else "0",
+            },
             timeout=TIEMPO_LIMITE_SEG
         )
 
@@ -209,9 +217,13 @@ def main():
 
         descargar_entradas()
 
-        for _ in range(MAXIMO_VUELTAS):
+        for vuelta in range(MAXIMO_VUELTAS):
 
-            resultado = ejecutar_vuelta()
+            # El boton del dashboard (MANUAL) entrena aunque no haya
+            # pedidos nuevos; las vueltas siguientes solo si los hay.
+            resultado = ejecutar_vuelta(
+                forzar=(origen == "MANUAL" and vuelta == 0)
+            )
 
             if resultado["codigo"] in (0, 3):
                 subir_resultados(resultado["codigo"])

@@ -1,13 +1,14 @@
 """
 Reentrenamiento del modelo con los datos actuales del sistema:
 
-    PostgreSQL (sinteticos + reales entregados)
+    DoorDash (historical_data.csv) + pedidos reales entregados (PostgreSQL)
         -> exportar_dataset.py -> pedidos_ml.csv
         -> entrenar_modelo.py  -> nueva version
 
 Codigos de salida:
     0 = nueva version entrenada y promovida
     2 = no hay pedidos reales nuevos, no se reentrena
+        (salvo FORZAR_ENTRENAMIENTO=1: reentrenamiento manual)
     3 = nueva version entrenada pero no mejora; se mantiene la vigente
     otro = error
 

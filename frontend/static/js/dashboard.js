@@ -38,6 +38,12 @@
     let periodo = 7;
     let graficos = [];
 
+    // Dashboard en vivo: se actualiza solo mientras esta abierto
+    const SEGUNDOS_EN_VIVO = 10;
+    let temporizadorVivo = null;
+    let actualizando = false;
+    let ultimosDatos = null;
+
 
     /* Valor encima de cada barra (solo si hay pocas barras). */
     const valoresEnBarras = {
@@ -592,9 +598,31 @@
     }
 
 
-    async function cargar() {
+    function marcarEnVivo(estado) {
 
-        contenido.innerHTML = `<p class="text-secondary">Cargando...</p>`;
+        const indicador = document.getElementById("dashEnVivo");
+
+        if (!indicador) {
+            return;
+        }
+
+        const hora = new Date().toLocaleTimeString("es-PE", {
+            hour: "2-digit", minute: "2-digit", second: "2-digit"
+        });
+
+        indicador.className = `dash-vivo ${estado === "error" ? "dash-vivo-error" : ""}`;
+        indicador.innerHTML = estado === "error"
+            ? `● Sin conexión · reintentando cada ${SEGUNDOS_EN_VIVO} s`
+            : `<span class="dash-vivo-punto"></span> En vivo · actualizado ${hora}`;
+    }
+
+
+    async function cargar(silencioso = false) {
+
+        if (!silencioso) {
+            contenido.innerHTML = `<p class="text-secondary">Cargando...</p>`;
+            ultimosDatos = null;
+        }
 
         filtros.querySelectorAll("button").forEach((b) => {
             b.classList.toggle("active", Number(b.dataset.periodo) === periodo);
@@ -614,10 +642,61 @@
                 throw new Error(datos.mensaje || "No se pudo cargar el dashboard.");
             }
 
-            pintar(datos);
+            const texto = JSON.stringify(datos);
+
+            // Solo se vuelve a dibujar si algo cambio (sin parpadeo)
+            if (texto !== ultimosDatos) {
+
+                const cuerpo = contenido.closest(".modal-body");
+                const scroll = cuerpo ? cuerpo.scrollTop : 0;
+
+                // En la actualizacion automatica los graficos no se animan
+                const animacion = Chart.defaults.animation;
+
+                if (silencioso) {
+                    Chart.defaults.animation = false;
+                }
+
+                try {
+                    pintar(datos);
+                } finally {
+                    Chart.defaults.animation = animacion;
+                }
+
+                if (cuerpo) {
+                    cuerpo.scrollTop = scroll;
+                }
+
+                ultimosDatos = texto;
+            }
+
+            marcarEnVivo("ok");
 
         } catch (error) {
+
+            if (silencioso && ultimosDatos) {
+                // Se mantiene lo ultimo que se vio y se reintenta luego
+                marcarEnVivo("error");
+                return;
+            }
+
             contenido.innerHTML = `<div class="alert alert-danger">${escapar(error.message)}</div>`;
+        }
+    }
+
+
+    async function actualizarEnVivo() {
+
+        if (actualizando || document.visibilityState !== "visible") {
+            return;
+        }
+
+        actualizando = true;
+
+        try {
+            await cargar(true);
+        } finally {
+            actualizando = false;
         }
     }
 
@@ -634,6 +713,16 @@
         cargar();
     });
 
-    modal.addEventListener("show.bs.modal", cargar);
+    modal.addEventListener("show.bs.modal", () => cargar());
+
+    modal.addEventListener("shown.bs.modal", () => {
+        clearInterval(temporizadorVivo);
+        temporizadorVivo = setInterval(actualizarEnVivo, SEGUNDOS_EN_VIVO * 1000);
+    });
+
+    modal.addEventListener("hidden.bs.modal", () => {
+        clearInterval(temporizadorVivo);
+        temporizadorVivo = null;
+    });
 
 })();

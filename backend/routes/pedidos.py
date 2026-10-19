@@ -2288,7 +2288,9 @@ def resumen_ml():
         "modelo": modelo,
         "reales": reales,
         "reentrenamiento": datos_ml.get("estado", {}),
-        "historial": datos_ml.get("historial", [])
+        "historial": datos_ml.get("historial", []),
+        # Ultima comparacion de los 5 modelos (con su tipo y justificacion)
+        "comparacion": datos_ml.get("comparacion")
     })
 
 

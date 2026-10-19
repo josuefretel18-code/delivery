@@ -19,6 +19,7 @@ RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
 MODELO = "ml/models/modelo_final.joblib"
 METRICAS = "ml/metrics/metricas.json"
 COMPARACION = "ml/metrics/comparacion_modelos.csv"
+COMPARACION_JSON = "ml/metrics/comparacion_modelos.json"
 MATRIZ = "ml/metrics/matriz_confusion.png"
 HISTORIAL = "ml/metrics/historial_modelos.json"
 ESTADO = "ml/metrics/estado_reentrenamiento.json"

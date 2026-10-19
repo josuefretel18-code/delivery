@@ -14,7 +14,9 @@ from sklearn.ensemble import (
     HistGradientBoostingClassifier
 )
 
+from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
 
 from sklearn.metrics import (
     accuracy_score,
@@ -29,7 +31,8 @@ from sklearn.metrics import (
 from sklearn.model_selection import (
     train_test_split,
     StratifiedKFold,
-    cross_val_score
+    cross_val_score,
+    RandomizedSearchCV
 )
 
 from sklearn.pipeline import Pipeline
@@ -95,6 +98,16 @@ RANDOM_STATE = 42
 N_JOBS = int(os.getenv("ML_N_JOBS", "2"))
 
 # Columnas de entrada y objetivo: ver ml/variables.py
+
+# Modelo Automatico: combinaciones de hiperparametros que prueba la
+# busqueda aleatoria (cada una con validacion cruzada de 3 pliegues).
+AUTOML_ITERACIONES = int(os.getenv("ML_AUTOML_ITER", "8"))
+
+# Reentrenamiento manual (boton del dashboard): entrena aunque no haya
+# pedidos reales nuevos. Lo activa ml/job_entrenamiento.py.
+FORZAR = os.getenv("FORZAR_ENTRENAMIENTO") == "1"
+
+ARCHIVO_COMPARACION_JSON = CARPETA_METRICAS / "comparacion_modelos.json"
 
 
 # =========================================================
@@ -210,7 +223,7 @@ if historial:
         for v in historial
     )
 
-    if registros_reales <= reales_ultimo:
+    if registros_reales <= reales_ultimo and not FORZAR:
 
         print(
             "\nNo hay pedidos reales nuevos desde "
@@ -305,6 +318,11 @@ print(
 # MODELOS
 # =========================================================
 
+# 5 modelos: 4 MANUALES (hiperparametros elegidos por nosotros) y
+# 1 AUTOMATICO (el sistema busca solo sus hiperparametros).
+# Todos con class_weight="balanced": hay menos pedidos retrasados que
+# a tiempo y, sin balancear, el modelo tenderia a decir "a tiempo".
+
 modelos = {
 
     "Regresion Logistica": Pipeline([
@@ -321,6 +339,13 @@ modelos = {
             )
         )
     ]),
+
+    "Arbol de Decision": DecisionTreeClassifier(
+        max_depth=8,
+        min_samples_leaf=50,
+        class_weight="balanced",
+        random_state=RANDOM_STATE
+    ),
 
     "Random Forest": RandomForestClassifier(
         n_estimators=150,
@@ -339,6 +364,120 @@ modelos = {
         class_weight="balanced",
         random_state=RANDOM_STATE
     )
+}
+
+
+# ---------------------------------------------------------
+# MODELO AUTOMATICO
+# Busqueda aleatoria de hiperparametros sobre el conjunto de
+# entrenamiento (el de prueba no se toca). El mejor se compara
+# despues con los otros 4 con la MISMA validacion cruzada.
+# ---------------------------------------------------------
+
+ESPACIO_AUTOML = {
+    "learning_rate": [0.03, 0.05, 0.08, 0.1, 0.15],
+    "max_iter": [150, 250, 400],
+    "max_leaf_nodes": [15, 31, 63],
+    "min_samples_leaf": [20, 50, 100, 200],
+    "l2_regularization": [0.0, 0.1, 1.0],
+}
+
+print("\n========================================")
+print("MODELO AUTOMATICO: BUSQUEDA DE HIPERPARAMETROS")
+print("========================================")
+
+busqueda = RandomizedSearchCV(
+    HistGradientBoostingClassifier(
+        class_weight="balanced",
+        random_state=RANDOM_STATE
+    ),
+    param_distributions=ESPACIO_AUTOML,
+    n_iter=AUTOML_ITERACIONES,
+    scoring="f1",
+    cv=StratifiedKFold(
+        n_splits=3,
+        shuffle=True,
+        random_state=RANDOM_STATE
+    ),
+    random_state=RANDOM_STATE,
+    n_jobs=N_JOBS
+)
+
+busqueda.fit(X_train, y_train)
+
+print("Combinaciones probadas:", AUTOML_ITERACIONES)
+print("Mejores hiperparametros:", busqueda.best_params_)
+print(f"F1 de la busqueda (CV 3): {busqueda.best_score_:.4f}")
+
+modelos["Gradient Boosting Automatico"] = clone(busqueda.best_estimator_)
+
+automl = {
+    "metodo": "RandomizedSearchCV (búsqueda aleatoria de hiperparámetros)",
+    "combinaciones_probadas": AUTOML_ITERACIONES,
+    "espacio_busqueda": ESPACIO_AUTOML,
+    "mejores_hiperparametros": {
+        clave: (valor.item() if hasattr(valor, "item") else valor)
+        for clave, valor in busqueda.best_params_.items()
+    },
+    "f1_busqueda_cv3": float(busqueda.best_score_),
+}
+
+
+# ---------------------------------------------------------
+# POR QUE CADA MODELO
+# ---------------------------------------------------------
+
+DESCRIPCION_MODELOS = {
+    "Regresion Logistica": {
+        "tipo": "Manual",
+        "hiperparametros": "max_iter=2000, class_weight=balanced, datos escalados",
+        "justificacion": (
+            "Modelo base (línea de referencia): simple, rápido e "
+            "interpretable; cada variable tiene un peso. Si un modelo "
+            "complejo no lo supera, no vale la pena usarlo."
+        ),
+    },
+    "Arbol de Decision": {
+        "tipo": "Manual",
+        "hiperparametros": "max_depth=8, min_samples_leaf=50, class_weight=balanced",
+        "justificacion": (
+            "Se explica con reglas 'si... entonces' (ej. si la carga por "
+            "repartidor es alta y es hora pico -> retraso) y capta "
+            "relaciones no lineales. Se limita la profundidad para que "
+            "no memorice los datos."
+        ),
+    },
+    "Random Forest": {
+        "tipo": "Manual",
+        "hiperparametros": "n_estimators=150, max_depth=10, min_samples_leaf=20, class_weight=balanced",
+        "justificacion": (
+            "Promedia 150 árboles entrenados con muestras distintas: es "
+            "robusto al ruido que DoorDash agregó a sus datos y reduce "
+            "el sobreajuste de un solo árbol."
+        ),
+    },
+    "Gradient Boosting": {
+        "tipo": "Manual",
+        "hiperparametros": "max_iter=200, learning_rate=0.1, class_weight=balanced",
+        "justificacion": (
+            "Árboles en secuencia donde cada uno corrige los errores del "
+            "anterior; suele ser el más preciso en datos tabulares. Se usa "
+            "la versión por histogramas, rápida con ~176 mil registros."
+        ),
+    },
+    "Gradient Boosting Automatico": {
+        "tipo": "Automatico",
+        "hiperparametros": ", ".join(
+            f"{clave}={valor}"
+            for clave, valor in automl["mejores_hiperparametros"].items()
+        ),
+        "justificacion": (
+            "El mismo algoritmo, pero el sistema elige solo sus "
+            f"hiperparámetros: prueba {AUTOML_ITERACIONES} combinaciones "
+            "con validación cruzada y se queda con la de mayor F1. Sirve "
+            "para comprobar si la configuración manual era la mejor."
+        ),
+    },
 }
 
 
@@ -482,7 +621,9 @@ for nombre, modelo in modelos.items():
 
         "matriz_confusion": (
             matriz.tolist()
-        )
+        ),
+
+        **DESCRIPCION_MODELOS[nombre]
     }
 
 
@@ -580,16 +721,16 @@ promovido = bool(
     or mejor_f1_cv >= f1_cv_vigente
 )
 
-
-# =========================================================
-# GUARDAR MODELO
-# =========================================================
-
 fecha_entrenamiento = (
     datetime.now(
         timezone.utc
     ).isoformat()
 )
+
+
+# =========================================================
+# GUARDAR MODELO
+# =========================================================
 
 
 paquete_modelo = {
@@ -642,6 +783,63 @@ def guardar_historial():
         ),
         encoding="utf-8"
     )
+
+
+# ---------------------------------------------------------
+# COMPARACION DE LOS 5 MODELOS (se guarda siempre, se promueva
+# o no el ganador: el dashboard muestra la ultima comparacion)
+# ---------------------------------------------------------
+
+orden = sorted(
+    resultados,
+    key=lambda nombre: resultados[nombre]["f1_cv_promedio"],
+    reverse=True
+)
+
+ARCHIVO_COMPARACION_JSON.write_text(
+    json.dumps(
+        {
+            "fecha_entrenamiento_utc": fecha_entrenamiento,
+            "version_entrenada": version_modelo,
+            "promovido": promovido,
+            "version_vigente": (
+                version_modelo
+                if promovido or not metricas_actuales
+                else metricas_actuales["version_modelo"]
+            ),
+            "modelo_ganador": mejor_nombre,
+            "criterio_seleccion": (
+                "Mayor F1 promedio en validación cruzada de 5 pliegues "
+                "sobre el 80 % de entrenamiento. F1 equilibra precisión y "
+                "recall: importa avisar los retrasos reales sin llenar de "
+                "falsas alarmas. El 20 % de prueba solo confirma."
+            ),
+            "dataset": {
+                "registros_totales": int(len(df)),
+                "registros_externos": registros_externos,
+                "registros_reales": registros_reales,
+                "entrenamiento": int(len(X_train)),
+                "prueba": int(len(X_test)),
+            },
+            "automl": automl,
+            "modelos": [
+                {
+                    "modelo": nombre,
+                    "posicion": posicion,
+                    "ganador": nombre == mejor_nombre,
+                    **{
+                        clave: valor
+                        for clave, valor in resultados[nombre].items()
+                    },
+                }
+                for posicion, nombre in enumerate(orden, start=1)
+            ],
+        },
+        indent=4,
+        ensure_ascii=False
+    ),
+    encoding="utf-8"
+)
 
 
 if not promovido:
@@ -770,6 +968,7 @@ salida_metricas = {
     ),
 
     "resultados": resultados,
+    "automl": automl,
     "fuente_dataset": leer_json(ARCHIVO_INFO_DATASET, None),
 
     "fecha_entrenamiento_utc": (

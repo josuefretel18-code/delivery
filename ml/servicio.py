@@ -248,6 +248,7 @@ def ruta_metricas():
         "ok": True,
         "metricas": almacen.leer_json(almacen.METRICAS),
         "historial": almacen.leer_json(almacen.HISTORIAL, []),
+        "comparacion": almacen.leer_json(almacen.COMPARACION_JSON),
         "estado": estado
     })
 
