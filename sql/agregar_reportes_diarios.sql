@@ -51,3 +51,10 @@ ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS franja_refuerzo VARCHAR(60
 -- Flujo en pasos: ultimo paso terminado (0 datos, 1 analista,
 -- 2 estratega, 3 redactor).
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS etapa SMALLINT;
+
+-- Orquestador y Evaluador (5 agentes): plan, flujo y decision del
+-- Orquestador, calificaciones del Evaluador y nota final (1 a 10).
+-- etapa pasa a 0 datos .. 5 evaluador.
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS orquestacion TEXT;
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS evaluacion TEXT;
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS nota_final NUMERIC(4,1);

@@ -1149,9 +1149,9 @@ function renderizarDashboardML(datos) {
                     </div>
 
                     ${
-                        // Solo si hay pedidos entregados sin usar (el
-                        // automático falló o está apagado): es un respaldo.
-                        puedeReentrenar && realesNuevos > 0 && !estadoReentreno.en_curso
+                        // Manual: entrena y compara los 5 modelos aunque no
+                        // haya pedidos nuevos (el automatico solo con nuevos).
+                        puedeReentrenar && !estadoReentreno.en_curso
                             ? `
                                 <button
                                     id="btnReentrenarML"
@@ -1159,7 +1159,7 @@ function renderizarDashboardML(datos) {
                                     type="button"
                                     onclick="reentrenarModeloML()"
                                 >
-                                    ${textoBotonReentrenar(estadoReentreno.automatico)}
+                                    ${realesNuevos > 0 ? textoBotonReentrenar(estadoReentreno.automatico) : "↻ Reentrenar y comparar 5 modelos"}
                                 </button>
                             `
                             : ""

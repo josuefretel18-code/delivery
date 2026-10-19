@@ -295,10 +295,11 @@ Si no es REINTENTAR, agente_reintento = "ninguno". motivo: una frase que cite la
 CRITERIOS_EVALUACION = ("precision", "coherencia", "utilidad", "claridad")
 
 
-def _notas(evaluacion):
+def _notas(evaluacion, nombres=None):
     """Ordena las calificaciones, acota los valores a 1-10 y calcula la
     nota de cada agente y la final (promedios, en el backend: el LLM
-    califica, el codigo hace la cuenta)."""
+    califica, el codigo hace la cuenta). nombres: agentes evaluados
+    (por defecto los 3 de la alerta; el reporte diario pasa los suyos)."""
 
     por_agente = {
         calificacion.get("agente"): calificacion
@@ -307,7 +308,7 @@ def _notas(evaluacion):
 
     agentes = []
 
-    for nombre in NOMBRES_AGENTES:
+    for nombre in nombres or NOMBRES_AGENTES:
 
         calificacion = por_agente.get(nombre)
 

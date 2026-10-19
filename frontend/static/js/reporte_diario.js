@@ -1,7 +1,8 @@
 /* ========================================================
    REPORTE DIARIO (sistema multiagente)
 
-   Pasos:  0 Datos (SQL) -> 1 Analista -> 2 Estratega -> 3 Redactor
+   Pasos:  0 Datos (SQL) -> 1 Orquestador -> 2 Analista -> 3 Estratega
+           -> 4 Redactor -> 5 Evaluador (+ decisión del Orquestador)
 
    - El stepper de arriba funciona como pestañas: cada paso muestra
      solo lo que produjo ese agente ("Reporte completo" muestra todo).
@@ -37,10 +38,26 @@
 
     const PASOS = [
         { clave: "datos", num: 0, icono: "📊", nombre: "Datos del día", trabajando: "Recopilando datos del día…" },
-        { clave: "analista", num: 1, icono: "🔍", nombre: "Analista de datos", trabajando: "Analizando datos…" },
-        { clave: "estratega", num: 2, icono: "🧭", nombre: "Estratega", trabajando: "Generando estrategias…" },
-        { clave: "redactor", num: 3, icono: "✍️", nombre: "Redactor", trabajando: "Redactando informe…" }
+        { clave: "orquestador", num: 1, icono: "🧭", nombre: "Orquestador", trabajando: "Planificando el trabajo…" },
+        { clave: "analista", num: 2, icono: "🔍", nombre: "Analista de datos", trabajando: "Analizando datos…" },
+        { clave: "estratega", num: 3, icono: "🎯", nombre: "Estratega", trabajando: "Generando estrategias…" },
+        { clave: "redactor", num: 4, icono: "✍️", nombre: "Redactor", trabajando: "Redactando informe…" },
+        { clave: "evaluador", num: 5, icono: "⭐", nombre: "Evaluador", trabajando: "Calificando a los agentes…" }
     ];
+
+    const NOMBRE_AGENTE = {
+        orquestador: "🧭 Orquestador",
+        analista: "🔍 Analista",
+        estratega: "🎯 Estratega",
+        redactor: "✍️ Redactor",
+        evaluador: "⭐ Evaluador"
+    };
+
+    const VEREDICTO = {
+        APROBADO: ["✅", "Aprobado", "ok"],
+        OBSERVADO: ["⚠️", "Observado", "aviso"],
+        DESAPROBADO: ["⛔", "Desaprobado", "mal"]
+    };
 
     const CALIFICACION = {
         BUENO: ["✅", "Día bueno", "ok"],
@@ -73,7 +90,7 @@
 
     let reportes = [];
     let reporteActual = null;
-    let vista = "completo";          // "completo" o el número de paso (0-3)
+    let vista = "completo";          // "completo" o el número de paso (0-5)
     let generacion = null;           // { paso, estado: "trabajando" | "error", mensaje }
 
 
@@ -217,6 +234,50 @@
     }
 
 
+    function tonoNota(nota) {
+        return nota === null || nota === undefined ? "neutro" : nota >= 8 ? "ok" : nota >= 6 ? "aviso" : "mal";
+    }
+
+
+    /* Nota del Evaluador para un agente (chip junto al título) */
+    function notaAgente(r, agente) {
+
+        const nota = ((r.evaluacion || {}).agentes || []).find((a) => a.agente === agente);
+
+        const corregido = ((r.orquestacion || {}).flujo || [])
+            .some((p) => p.agente === agente && (p.detalle || "").startsWith("Reintento"));
+
+        return (nota ? ` ${chip(`⭐ ${nota.nota.toFixed(1)}`, tonoNota(nota.nota))}` : "") +
+            (corregido ? ` ${chip("↻ corregido", "neutro")}` : "");
+    }
+
+
+    /* Encargo que el Orquestador le dio a un agente */
+    function encargoAgente(r, agente) {
+
+        const texto = ((r.orquestacion || {}).plan || {})[`encargo_${agente}`];
+
+        return texto ? `<div class="rep-encargo">🧭 Encargo del Orquestador: ${escapar(texto)}</div>` : "";
+    }
+
+
+    /* Recorrido real de los agentes con su tiempo */
+    function recorrido(r) {
+
+        const flujo = (r.orquestacion || {}).flujo || [];
+
+        if (!flujo.length) {
+            return "";
+        }
+
+        return `
+            <div class="rep-flujo">
+                ${flujo.map((p) => `<span title="${escapar(p.detalle || "")}">${NOMBRE_AGENTE[p.agente] || escapar(p.agente)}${p.ms ? ` <small>${(p.ms / 1000).toFixed(1)} s</small>` : ""}</span>`).join("<b>→</b>")}
+            </div>
+        `;
+    }
+
+
     /* =====================================================
        3. VISTAS POR PASO
     ===================================================== */
@@ -315,8 +376,8 @@
     /* Paso 1: hallazgos del Agente Analista */
     function vistaAnalista(r) {
 
-        if (r.etapa === null || r.etapa < 1) {
-            return seccion("🔍 1 · Agente Analista de datos: hallazgos", esperandoAgente(PASOS[1]));
+        if (r.etapa === null || r.etapa < 2) {
+            return seccion("🔍 2 · Agente Analista de datos: hallazgos", esperandoAgente(PASOS[2]));
         }
 
         const hallazgos = (r.hallazgos || []).map(normalizarHallazgo).map((h) => {
@@ -333,7 +394,8 @@
         }).join("");
 
         return seccion(
-            "🔍 1 · Agente Analista de datos: hallazgos",
+            "🔍 2 · Agente Analista de datos: hallazgos" + notaAgente(r, "analista"),
+            encargoAgente(r, "analista") +
             `<div class="rep-hallazgos">${hallazgos || `<p class="rep-muted">Sin hallazgos.</p>`}</div>`,
             "Recibe los indicadores del día y devuelve hallazgos con cifras y comparaciones."
         );
@@ -343,8 +405,8 @@
     /* Paso 2: plan del Agente Estratega */
     function vistaEstratega(r) {
 
-        if (r.etapa === null || r.etapa < 2) {
-            return seccion("🧭 2 · Agente Estratega: plan para mañana", esperandoAgente(PASOS[2]));
+        if (r.etapa === null || r.etapa < 3) {
+            return seccion("🎯 3 · Agente Estratega: plan para mañana", esperandoAgente(PASOS[3]));
         }
 
         const plan = tabla(
@@ -367,8 +429,8 @@
         `;
 
         return seccion(
-            "🧭 2 · Agente Estratega: plan para mañana",
-            refuerzo + plan,
+            "🎯 3 · Agente Estratega: plan para mañana" + notaAgente(r, "estratega"),
+            encargoAgente(r, "estratega") + refuerzo + plan,
             "Recibe los hallazgos del Analista y propone acciones con responsable, horario y meta medible."
         );
     }
@@ -377,8 +439,8 @@
     /* Paso 3: resumen del Agente Redactor */
     function vistaRedactor(r) {
 
-        if (r.etapa === null || r.etapa < 3 || !r.titulo) {
-            return seccion("✍️ 3 · Agente Redactor: resumen ejecutivo", esperandoAgente(PASOS[3]));
+        if (r.etapa === null || r.etapa < 4 || !r.titulo) {
+            return seccion("✍️ 4 · Agente Redactor: resumen ejecutivo", esperandoAgente(PASOS[4]));
         }
 
         const [icono, texto, tono] = CALIFICACION[r.calificacion] || ["", "", "neutro"];
@@ -386,9 +448,10 @@
         return `
             <div class="rep-resumen">
                 <div class="rep-resumen-cab">
-                    <span class="rep-resumen-etiqueta">✍️ 3 · Agente Redactor: resumen ejecutivo</span>
+                    <span class="rep-resumen-etiqueta">✍️ 4 · Agente Redactor: resumen ejecutivo${notaAgente(r, "redactor")}</span>
                     ${r.calificacion ? chip(texto, tono, icono) : ""}
                 </div>
+                ${encargoAgente(r, "redactor")}
                 <h2>${escapar(r.titulo)}</h2>
                 <p class="mb-0">${escapar(r.resumen)}</p>
             </div>
@@ -399,12 +462,113 @@
     }
 
 
+    const ANTES_DEL_ORQUESTADOR =
+        `<p class="rep-muted">Este reporte se generó antes de incorporar al Orquestador y al Evaluador. Genéralo de nuevo para verlos.</p>`;
+
+
+    /* Paso 1: plan del Agente Orquestador */
+    function vistaOrquestador(r) {
+
+        const titulo = "🧭 1 · Agente Orquestador: planifica y reparte el trabajo";
+        const o = r.orquestacion;
+
+        if (!o || !o.plan) {
+            return seccion(titulo, r.etapa !== null && r.etapa >= 1 && r.estado !== "PROCESANDO"
+                ? ANTES_DEL_ORQUESTADOR
+                : esperandoAgente(PASOS[1]));
+        }
+
+        const p = o.plan;
+
+        const encargos = tabla(
+            ["Agente", "Encargo"],
+            ["analista", "estratega", "redactor"].map((a) => [
+                `<strong>${NOMBRE_AGENTE[a]}</strong>`,
+                escapar(p[`encargo_${a}`] || "--")
+            ]),
+            ""
+        );
+
+        return seccion(
+            titulo,
+            `
+                <div class="rep-orq">
+                    <div><span class="rep-etiqueta">Enfoque del día</span><div class="rep-orq-enfoque">${escapar(p.enfoque || "--")}</div></div>
+                    <div>${chip(`Prioridad ${p.prioridad || "--"}`, PRIORIDAD[p.prioridad] || "neutro")}</div>
+                </div>
+                <p class="rep-muted mb-2">${escapar(p.razon || "")}</p>
+                ${encargos}
+            `,
+            "Lee los indicadores, define el enfoque del día y le da un encargo a cada agente. Al final decide con la evaluación."
+        );
+    }
+
+
+    /* Paso 5: notas del Agente Evaluador y decisión del Orquestador */
+    function vistaEvaluador(r) {
+
+        const titulo = "⭐ 5 · Agente Evaluador: calificación de los agentes";
+        const e = r.evaluacion;
+
+        if (!e) {
+            return seccion(titulo, r.estado === "LISTO" ? ANTES_DEL_ORQUESTADOR : esperandoAgente(PASOS[5]));
+        }
+
+        const [icono, texto, tono] = VEREDICTO[e.veredicto] || ["", e.veredicto || "", "neutro"];
+        const decision = (r.orquestacion || {}).decision || {};
+
+        const notas = tabla(
+            ["Agente", "Precisión", "Coherencia", "Utilidad", "Claridad", "Nota", "Observación"],
+            (e.agentes || []).map((a) => [
+                `<strong>${NOMBRE_AGENTE[a.agente] || escapar(a.agente)}</strong>`,
+                `<span class="rep-num">${a.precision}</span>`,
+                `<span class="rep-num">${a.coherencia}</span>`,
+                `<span class="rep-num">${a.utilidad}</span>`,
+                `<span class="rep-num">${a.claridad}</span>`,
+                chip(a.nota.toFixed(1), tonoNota(a.nota)),
+                `<span class="rep-muted">${escapar(a.observacion)}</span>`
+            ]),
+            ""
+        );
+
+        const cierre = `
+            <div class="rep-decision">
+                <strong>🧭 Decisión del Orquestador:</strong>
+                ${decision.decision === "APROBAR" ? chip("Reporte aprobado", "ok", "✅") : chip(decision.decision || "--", "neutro")}
+                ${decision.agente_reintento && decision.agente_reintento !== "ninguno"
+                    ? chip(`Devolvió el trabajo a ${NOMBRE_AGENTE[decision.agente_reintento] || decision.agente_reintento}`, "aviso", "↻")
+                    : ""}
+                <div class="rep-muted">${escapar(decision.motivo || "")}</div>
+            </div>
+        `;
+
+        return seccion(
+            titulo,
+            `
+                <div class="rep-nota-final">
+                    <span>Nota final</span>
+                    <strong class="rep-nota-${tonoNota(e.nota_final)}">${e.nota_final !== null && e.nota_final !== undefined ? e.nota_final.toFixed(1) : "--"}</strong>
+                    ${chip(texto, tono, icono)}
+                    <span class="rep-muted">${escapar(e.comentario_general || "")}</span>
+                </div>
+                ${notas}
+                ${cierre}
+                ${recorrido(r)}
+            `,
+            "Califica del 1 al 10 a los 3 agentes de automatización; el sistema calcula la nota final."
+        );
+    }
+
+
     function vistaCompleta(r) {
 
-        // Orden de lectura: primero el resumen (lo que lee el jefe)
+        // Orden de lectura: primero el resumen (lo que lee el jefe) y la
+        // calificación; luego los datos y el trabajo de cada agente.
         return `
             ${vistaRedactor(r)}
+            ${vistaEvaluador(r)}
             ${vistaDatos(r)}
+            ${vistaOrquestador(r)}
             ${vistaAnalista(r)}
             ${vistaEstratega(r)}
         `;
@@ -418,7 +582,7 @@
                 Kimbos Delivery · Reporte del ${fechaCorta(r.fecha)} ·
                 ${r.origen === "PROGRAMADO" ? "Generado automáticamente (Cloud Scheduler)" : "Generado manualmente"}
                 ${r.generado ? `el ${new Date(r.generado).toLocaleString("es-PE")}` : ""}
-                · Sistema multiagente: Analista de datos → Estratega → Redactor
+                · Sistema multiagente: Orquestador → Analista de datos → Estratega → Redactor → Evaluador
             </div>
         `;
     }
@@ -452,11 +616,15 @@
 
         const m = (r && r.metricas) || {};
 
+        const plan = (r.orquestacion || {}).plan;
+
         return {
             0: `${m.pedidos ?? 0} pedidos analizados`,
-            1: `${(r.hallazgos || []).length} hallazgos`,
-            2: `${(r.recomendaciones || []).length} acciones · ${r.repartidores_sugeridos ?? "--"} repartidores`,
-            3: r.calificacion ? (CALIFICACION[r.calificacion] || [])[1] || "Resumen listo" : "Resumen listo"
+            1: plan ? `Prioridad ${plan.prioridad}` : "—",
+            2: `${(r.hallazgos || []).length} hallazgos`,
+            3: `${(r.recomendaciones || []).length} acciones · ${r.repartidores_sugeridos ?? "--"} repartidores`,
+            4: r.calificacion ? (CALIFICACION[r.calificacion] || [])[1] || "Resumen listo" : "Resumen listo",
+            5: r.nota_final !== null && r.nota_final !== undefined ? `Nota final ${Number(r.nota_final).toFixed(1)}` : "—"
         }[paso.num];
     }
 
@@ -558,9 +726,11 @@
         const cuerpo = {
             completo: vistaCompleta,
             0: vistaDatos,
-            1: vistaAnalista,
-            2: vistaEstratega,
-            3: vistaRedactor
+            1: vistaOrquestador,
+            2: vistaAnalista,
+            3: vistaEstratega,
+            4: vistaRedactor,
+            5: vistaEvaluador
         }[vista](r);
 
         contenido.innerHTML = `
@@ -800,7 +970,7 @@
         .rep-tab-completo { border: 1px solid #e1e0d9; background: #fff; border-radius: 14px; padding: 10px 14px;
                             font-weight: 600; font-size: 13px; }
         .rep-tab-completo.activo { border-color: #171717; background: #171717; color: #fff; }
-        .rep-pasos { flex: 1; display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+        .rep-pasos { flex: 1 1 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; min-width: 0; }
         .rep-paso { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: center; text-align: left;
                     border: 1px solid #e1e0d9; border-radius: 14px; padding: 10px 12px; background: #fff;
                     transition: border-color .15s ease, box-shadow .15s ease; }
@@ -817,7 +987,7 @@
         .rep-paso-cuerpo { display: flex; flex-direction: column; min-width: 0; }
         .rep-paso-nombre { font-weight: 700; font-size: 12.5px; }
         .rep-paso-estado { font-size: 11.5px; color: #52514e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .rep-paso-flecha { display: flex; align-items: center; color: #898781; }
+        .rep-paso-flecha { display: none; }
         .rep-reintento { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: -4px 0 12px; }
         .rep-espera { padding: 18px; border-radius: 14px; border: 1px dashed #d8d8d8; background: #fff;
                       color: #52514e; display: flex; gap: 10px; align-items: center; }
@@ -862,9 +1032,30 @@
         .rep-barra-f { height: 12px; border-radius: 0 4px 4px 0; background: #2a78d6; min-width: 2px; }
         .rep-pie { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e1e0d9; font-size: 11px; color: #898781; }
 
+        /* Orquestador y Evaluador */
+        .rep-seccion h3 .rep-chip { vertical-align: middle; margin-left: 4px; }
+        .rep-encargo { font-size: 12px; color: #4b43a8; margin: -2px 0 8px; }
+        .rep-orq { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center;
+                   padding: 12px 14px; border-radius: 14px; background: #f1efff; border: 1px solid #d8d4f5; margin-bottom: 8px; }
+        .rep-orq-enfoque { font-size: 17px; font-weight: 700; }
+        .rep-nota-final { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;
+                          padding: 12px 14px; border-radius: 14px; background: #fffaf0; border: 1px solid #f3d98f; }
+        .rep-nota-final strong { font-size: 26px; font-weight: 800; }
+        .rep-nota-ok { color: #1d5e1d; }
+        .rep-nota-aviso { color: #6b4d00; }
+        .rep-nota-mal { color: #8a1f1f; }
+        .rep-decision { margin-top: 10px; padding: 10px 14px; border-radius: 12px; background: #f1efff; border: 1px solid #d8d4f5; }
+        .rep-flujo { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 10px; padding: 6px 10px;
+                     border-radius: 10px; border: 1px dashed #d8d4f5; background: #fff; font-size: 11.5px; }
+        .rep-flujo small { color: #52514e; }
+        .rep-flujo b { color: #9b93e6; font-weight: 400; }
+
+        @media (max-width: 1100px) {
+            .rep-pasos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+
         @media (max-width: 860px) {
-            .rep-pasos { flex-direction: column; }
-            .rep-paso-flecha { display: none; }
+            .rep-pasos { grid-template-columns: 1fr; }
             .rep-kpis { grid-template-columns: repeat(2, 1fr); }
             .rep-dos { grid-template-columns: 1fr; }
         }

@@ -2,13 +2,19 @@
 Sistema multiagente con automatizacion.
 
 B) Reporte diario (se dispara por HORARIO: Cloud Scheduler, 23:00).
-   Tres agentes trabajan en cadena sobre los indicadores del dia:
+   Cinco agentes trabajan coordinados sobre los indicadores del dia:
 
+     0. Orquestador       -> PLANIFICA: enfoque del dia y un encargo
+                             para cada agente de automatizacion.
      1. Analista de datos -> hallazgos del dia (puede comparar con los
                              ultimos dias y consultar el modelo ML).
      2. Estratega         -> recomendaciones y repartidores sugeridos
                              para manana.
      3. Redactor          -> titulo y resumen ejecutivo.
+     4. Evaluador         -> califica a los agentes 1, 2 y 3 (1 a 10).
+     0. Orquestador       -> DECIDE: aprueba el reporte o devuelve el
+                             trabajo al agente con nota baja junto con
+                             la observacion del evaluador (1 reintento).
 
    Las cifras las calcula el sistema con SQL; los agentes solo las
    interpretan (no pueden inventar numeros). Un dia sin pedidos no
@@ -28,6 +34,7 @@ from db import get_connection
 from backend.agentes_automaticos import (
     _ejecutar,
     _esquema,
+    _notas,
     asegurar_tabla_alertas,
 )
 from backend.llm_agente import configuracion, gasto_mes_usd, llm_configurado
@@ -350,6 +357,7 @@ Tu tarea: escribir de 4 a 6 hallazgos concretos del dia.
 - Revisa: ventas y ticket, hora pico, productos mas vendidos, retrasos reales y tiempo real vs prometido, espera por falta de repartidor, entregas por repartidor, aciertos del modelo de Machine Learning y alertas de los agentes.
 - Puedes usar estado_modelo para el modelo ML vigente y resumen_ultimos_dias para mas detalle. Usa como maximo una herramienta.
 - Si hay menos de 5 pedidos, incluye un hallazgo NEUTRO indicando que las conclusiones son preliminares.
+- Si recibes "encargo" del Orquestador, cubre ese punto. Si recibes "observacion_evaluador", corrige lo que se te observo.
 - Usa solo las cifras recibidas o de las herramientas; no inventes. Espanol, frases cortas.""",
     "herramientas": {
         "resumen_ultimos_dias": (
@@ -406,6 +414,7 @@ Cada recomendacion debe tener:
 Ademas:
 - repartidores_sugeridos: entero entre 1 y 6, segun los repartidores disponibles, la carga, la espera y los retrasos.
 - franja_refuerzo: franja horaria en la que mas se necesitan repartidores (segun la hora pico), por ejemplo "17:00 a 19:00".
+Si recibes "encargo" del Orquestador, tenlo en cuenta. Si recibes "observacion_evaluador", corrige lo que se te observo.
 Espanol, frases cortas.""",
     "herramientas": {},
     "formato": _esquema("estrategia", {
@@ -444,7 +453,8 @@ Redacta para el administrador:
 - calificacion: BUENO (sin retrasos importantes y ventas estables o en alza), REGULAR (algun problema puntual) o CRITICO (retrasos frecuentes o caida fuerte de ventas). Con menos de 5 pedidos, como maximo REGULAR si hubo algun retraso; si no, BUENO.
 - resumen: 3 frases (resumen ejecutivo) con las cifras mas importantes, la comparacion con ayer y la recomendacion principal.
 - conclusion: 1 o 2 frases con el foco para manana.
-No repitas todo: lo demas ya se muestra en tablas. Espanol de Peru, tono profesional.""",
+No repitas todo: lo demas ya se muestra en tablas. Espanol de Peru, tono profesional.
+Si recibes "encargo" del Orquestador, tenlo en cuenta. Si recibes "observacion_evaluador", corrige lo que se te observo.""",
     "herramientas": {},
     "formato": _esquema("reporte", {
         "titulo": {"type": "string"},
@@ -453,6 +463,87 @@ No repitas todo: lo demas ya se muestra en tablas. Espanol de Peru, tono profesi
         "conclusion": {"type": "string"},
     }),
     "max_pasos": 1,
+}
+
+
+AGENTES_REPORTE = ["analista", "estratega", "redactor"]
+
+AGENTE_ORQUESTADOR_REPORTE = {
+    "nombre": "orquestador",
+    "instrucciones": """Eres el Agente Orquestador del reporte diario de Kimbos (delivery en Peru). Coordinas a tres agentes de automatizacion: Analista de datos (hallazgos con cifras), Estratega (plan para manana) y Redactor (resumen ejecutivo). Al final, el Agente Evaluador califica su trabajo.
+
+Recibes los indicadores del dia. Planifica:
+- enfoque: el tema principal del dia en pocas palabras (por ejemplo "Retrasos en la hora pico" o "Dia de ventas altas").
+- prioridad: ALTA si hubo retrasos frecuentes, caida fuerte de ventas o espera por falta de repartidores; MEDIA si hubo algun problema puntual; BAJA si fue un dia normal.
+- Un encargo corto y concreto para cada agente segun los datos (que revisar o en que fijarse). Una frase cada uno.
+- razon: por que ese enfoque, en una frase con una cifra.
+No inventes datos. Responde en espanol.""",
+    "herramientas": {},
+    "formato": _esquema("plan_reporte", {
+        "enfoque": {"type": "string"},
+        "prioridad": {"type": "string", "enum": ["ALTA", "MEDIA", "BAJA"]},
+        "encargo_analista": {"type": "string"},
+        "encargo_estratega": {"type": "string"},
+        "encargo_redactor": {"type": "string"},
+        "razon": {"type": "string"},
+    }),
+    "max_pasos": 1,
+    "max_tokens": 600,
+}
+
+AGENTE_EVALUADOR_REPORTE = {
+    "nombre": "evaluador",
+    "instrucciones": """Eres el Agente Evaluador del reporte diario de Kimbos. Recibes los indicadores del dia (calculados por el sistema), el plan del Orquestador y el trabajo de tres agentes: Analista de datos (hallazgos), Estratega (recomendaciones) y Redactor (titulo, calificacion y resumen).
+
+Califica a CADA uno de los tres agentes con enteros del 1 al 10 en:
+- precision: las cifras coinciden con los indicadores; nada inventado.
+- coherencia: es consistente con el agente anterior y cumple el encargo del Orquestador (p. ej. la calificacion del dia del Redactor concuerda con los retrasos).
+- utilidad: sirve al administrador para decidir (acciones concretas, con responsable, horario y meta).
+- claridad: frases cortas y entendibles.
+Se exigente pero justo: 9-10 solo si no hay nada que mejorar. En observacion escribe en una frase que corregir (o "Sin observaciones").
+comentario_general: una frase sobre el reporte en conjunto. Responde en espanol.""",
+    "herramientas": {},
+    "formato": _esquema("evaluacion_reporte", {
+        "calificaciones": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "agente": {"type": "string", "enum": AGENTES_REPORTE},
+                    "precision": {"type": "integer"},
+                    "coherencia": {"type": "integer"},
+                    "utilidad": {"type": "integer"},
+                    "claridad": {"type": "integer"},
+                    "observacion": {"type": "string"},
+                },
+                "required": ["agente", "precision", "coherencia",
+                             "utilidad", "claridad", "observacion"],
+                "additionalProperties": False,
+            },
+        },
+        "comentario_general": {"type": "string"},
+    }),
+    "max_pasos": 1,
+    "max_tokens": 1000,
+}
+
+AGENTE_ORQUESTADOR_CIERRE = {
+    "nombre": "orquestador",
+    "instrucciones": """Eres el Agente Orquestador del reporte diario de Kimbos. Ya trabajaron el Analista de datos, el Estratega y el Redactor, y el Agente Evaluador califico su trabajo (notas de 1 a 10).
+
+Decide como cierra el flujo aplicando estas reglas EN ORDEN (la primera que se cumpla):
+1. REINTENTAR: algun agente tiene nota menor a 6 y su observacion se puede corregir. Indica cual en agente_reintento (el de nota mas baja); volvera a trabajar con la observacion del evaluador.
+2. APROBAR: en cualquier otro caso. El reporte queda listo para el administrador.
+Si es APROBAR, agente_reintento = "ninguno". motivo: una frase que cite la regla aplicada. Responde en espanol.""",
+    "herramientas": {},
+    # El motivo va primero: el modelo razona la regla y luego decide.
+    "formato": _esquema("cierre_reporte", {
+        "motivo": {"type": "string"},
+        "decision": {"type": "string", "enum": ["APROBAR", "REINTENTAR"]},
+        "agente_reintento": {"type": "string", "enum": AGENTES_REPORTE + ["ninguno"]},
+    }),
+    "max_pasos": 1,
+    "max_tokens": 400,
 }
 
 
@@ -486,12 +577,15 @@ def _json(valor):
 
 
 # =========================================================
-# FLUJO SECUENCIAL EN 4 PASOS
+# FLUJO SECUENCIAL EN 6 PASOS
 #
-#   0. datos     -> el sistema calcula los indicadores (SQL)
-#   1. analista  -> Agente Analista de datos: hallazgos (JSON)
-#   2. estratega -> Agente Estratega: plan con prioridades y horarios
-#   3. redactor  -> Agente Redactor: titulo, calificacion y resumen
+#   0. datos       -> el sistema calcula los indicadores (SQL)
+#   1. orquestador -> Agente Orquestador: enfoque y encargos
+#   2. analista    -> Agente Analista de datos: hallazgos (JSON)
+#   3. estratega   -> Agente Estratega: plan con prioridades y horarios
+#   4. redactor    -> Agente Redactor: titulo, calificacion y resumen
+#   5. evaluador   -> Agente Evaluador: notas; el Orquestador aprueba
+#                     o devuelve el trabajo a un agente (1 reintento)
 #
 # Cada paso lee de la BD lo que dejo el anterior y guarda su
 # resultado; el servidor rechaza un paso si el anterior no termino.
@@ -499,7 +593,8 @@ def _json(valor):
 # Scheduler los ejecuta en orden con generar_reporte_diario().
 # =========================================================
 
-PASOS = ("datos", "analista", "estratega", "redactor")
+PASOS = ("datos", "orquestador", "analista", "estratega", "redactor", "evaluador")
+ULTIMO_PASO = len(PASOS) - 1
 
 
 class PasoFueraDeOrden(Exception):
@@ -538,7 +633,7 @@ def _reporte_para_paso(fecha, paso):
     reporte = obtener_reporte(fecha)
     numero = PASOS.index(paso)
 
-    if not reporte or reporte["estado"] in ("LISTO", "SIN_DATOS"):
+    if not reporte or reporte["estado"] in ("LISTO", "SIN_DATOS") or reporte["etapa"] is None:
         raise PasoFueraDeOrden("Primero genera los datos del día (paso 0).")
 
     if (reporte.get("etapa") if reporte.get("etapa") is not None else -1) < numero - 1:
@@ -588,7 +683,7 @@ def paso_datos(fecha=None, origen="MANUAL"):
         _guardar_reporte(
             fecha, origen,
             estado="SIN_DATOS",
-            etapa=3,
+            etapa=ULTIMO_PASO,
             metricas=_json(metricas),
             hallazgos=_json([{
                 "tipo": "NEUTRO",
@@ -624,6 +719,9 @@ def paso_datos(fecha=None, origen="MANUAL"):
         calificacion=None,
         resumen=None,
         conclusion=None,
+        orquestacion=None,
+        evaluacion=None,
+        nota_final=None,
         costo_usd=Decimal("0"),
         duracion_ms=0,
         error=None,
@@ -632,89 +730,271 @@ def paso_datos(fecha=None, origen="MANUAL"):
     return obtener_reporte(fecha)
 
 
-def paso_analista(fecha):
-    """Paso 1: el Agente Analista recibe los indicadores (SQL) y
-    devuelve solo los hallazgos estructurados."""
+def _con_flujo(reporte, agente, duracion, detalle=None, **extra):
+    """orquestacion (JSON) con un paso mas en el flujo."""
 
-    reporte = _reporte_para_paso(fecha, "analista")
+    orquestacion = dict(reporte.get("orquestacion") or {})
+    orquestacion.update(extra)
+    orquestacion["flujo"] = list(orquestacion.get("flujo") or []) + [{
+        "agente": agente,
+        "detalle": detalle,
+        "ms": int(duracion),
+    }]
 
-    analisis, costo, duracion = _ejecutar_paso(fecha, "analista", AGENTE_ANALISTA_DATOS, {
+    return orquestacion
+
+
+def _encargo(reporte, agente):
+    return ((reporte.get("orquestacion") or {}).get("plan") or {}).get(f"encargo_{agente}", "")
+
+
+def paso_orquestador(fecha):
+    """Paso 1: el Orquestador lee los indicadores y reparte el trabajo."""
+
+    reporte = _reporte_para_paso(fecha, "orquestador")
+
+    plan, costo, duracion = _ejecutar_paso(fecha, "orquestador", AGENTE_ORQUESTADOR_REPORTE, {
+        "fecha": fecha.strftime("%d/%m/%Y"),
         "indicadores_del_dia": reporte["metricas"],
     })
 
     _actualizar_reporte(
         fecha, costo=costo, duracion_ms=duracion,
         estado="PROCESANDO",
-        etapa=1,
-        hallazgos=_json(analisis["hallazgos"][:6]),
+        etapa=PASOS.index("orquestador"),
+        orquestacion=_json(_con_flujo(
+            reporte, "orquestador", duracion, "Planifica: enfoque y encargos", plan=plan,
+        )),
         error=None,
     )
 
     return obtener_reporte(fecha)
 
 
-def paso_estratega(fecha):
-    """Paso 2: el Agente Estratega recibe los hallazgos del Analista
-    (y los indicadores como referencia) y arma el plan para manana."""
+# --- Trabajo de cada agente (se reutiliza en el reintento) ---
 
-    reporte = _reporte_para_paso(fecha, "estratega")
+def _trabajo_analista(fecha, reporte, observacion=None):
 
-    estrategia, costo, duracion = _ejecutar_paso(fecha, "estratega", AGENTE_ESTRATEGA, {
+    entrada = {
+        "indicadores_del_dia": reporte["metricas"],
+        "encargo": _encargo(reporte, "analista"),
+    }
+
+    if observacion:
+        entrada["observacion_evaluador"] = observacion
+
+    analisis, costo, duracion = _ejecutar_paso(fecha, "analista", AGENTE_ANALISTA_DATOS, entrada)
+
+    return {"hallazgos": _json(analisis["hallazgos"][:6])}, costo, duracion
+
+
+def _trabajo_estratega(fecha, reporte, observacion=None):
+
+    entrada = {
         "hallazgos": reporte["hallazgos"],
         "indicadores_del_dia": reporte["metricas"],
-    })
+        "encargo": _encargo(reporte, "estratega"),
+    }
 
-    _actualizar_reporte(
-        fecha, costo=costo, duracion_ms=duracion,
-        estado="PROCESANDO",
-        etapa=2,
-        recomendaciones=_json(estrategia["recomendaciones"][:3]),
-        repartidores_sugeridos=max(1, min(int(estrategia["repartidores_sugeridos"]), 6)),
-        franja_refuerzo=(estrategia.get("franja_refuerzo") or "")[:60] or None,
-        error=None,
-    )
+    if observacion:
+        entrada["observacion_evaluador"] = observacion
 
-    return obtener_reporte(fecha)
+    estrategia, costo, duracion = _ejecutar_paso(fecha, "estratega", AGENTE_ESTRATEGA, entrada)
+
+    return {
+        "recomendaciones": _json(estrategia["recomendaciones"][:3]),
+        "repartidores_sugeridos": max(1, min(int(estrategia["repartidores_sugeridos"]), 6)),
+        "franja_refuerzo": (estrategia.get("franja_refuerzo") or "")[:60] or None,
+    }, costo, duracion
 
 
-def paso_redactor(fecha):
-    """Paso 3: el Agente Redactor recibe todo lo anterior y escribe el
-    titulo, la calificacion del dia, el resumen y la conclusion."""
+def _trabajo_redactor(fecha, reporte, observacion=None):
 
-    reporte = _reporte_para_paso(fecha, "redactor")
-
-    redaccion, costo, duracion = _ejecutar_paso(fecha, "redactor", AGENTE_REDACTOR, {
+    entrada = {
         "fecha": fecha.strftime("%d/%m/%Y"),
         "indicadores_del_dia": reporte["metricas"],
         "hallazgos": reporte["hallazgos"],
         "recomendaciones": reporte["recomendaciones"],
         "repartidores_sugeridos": reporte["repartidores_sugeridos"],
         "franja_refuerzo": reporte["franja_refuerzo"],
-    })
+        "encargo": _encargo(reporte, "redactor"),
+    }
+
+    if observacion:
+        entrada["observacion_evaluador"] = observacion
+
+    redaccion, costo, duracion = _ejecutar_paso(fecha, "redactor", AGENTE_REDACTOR, entrada)
+
+    return {
+        "titulo": redaccion["titulo"][:200],
+        "calificacion": redaccion["calificacion"],
+        "resumen": redaccion["resumen"],
+        "conclusion": redaccion["conclusion"],
+    }, costo, duracion
+
+
+TRABAJO = {
+    "analista": _trabajo_analista,
+    "estratega": _trabajo_estratega,
+    "redactor": _trabajo_redactor,
+}
+
+
+def _paso_agente(fecha, agente):
+    """Pasos 2, 3 y 4: un agente de automatizacion con su encargo."""
+
+    reporte = _reporte_para_paso(fecha, agente)
+
+    campos, costo, duracion = TRABAJO[agente](fecha, reporte)
 
     _actualizar_reporte(
         fecha, costo=costo, duracion_ms=duracion,
+        estado="PROCESANDO",
+        etapa=PASOS.index(agente),
+        orquestacion=_json(_con_flujo(reporte, agente, duracion)),
+        error=None,
+        **campos,
+    )
+
+    return obtener_reporte(fecha)
+
+
+def _evaluar(fecha, reporte):
+
+    evaluacion, costo, duracion = _ejecutar_paso(fecha, "evaluador", AGENTE_EVALUADOR_REPORTE, {
+        "indicadores_del_dia": reporte["metricas"],
+        "plan_orquestador": (reporte.get("orquestacion") or {}).get("plan"),
+        "analista": {"hallazgos": reporte["hallazgos"]},
+        "estratega": {
+            "recomendaciones": reporte["recomendaciones"],
+            "repartidores_sugeridos": reporte["repartidores_sugeridos"],
+            "franja_refuerzo": reporte["franja_refuerzo"],
+        },
+        "redactor": {
+            "titulo": reporte["titulo"],
+            "calificacion": reporte["calificacion"],
+            "resumen": reporte["resumen"],
+            "conclusion": reporte["conclusion"],
+        },
+    })
+
+    return _notas(evaluacion, AGENTES_REPORTE), costo, duracion
+
+
+def paso_evaluador(fecha):
+    """Paso 5: el Evaluador califica y el Orquestador decide. Si un
+    agente tiene nota baja, vuelve a trabajar con la observacion (y los
+    agentes que dependen de el); luego se evalua otra vez."""
+
+    reporte = _reporte_para_paso(fecha, "evaluador")
+    costo_total = 0.0
+    duracion_total = 0.0
+
+    evaluacion, costo, duracion = _evaluar(fecha, reporte)
+    costo_total += costo
+    duracion_total += duracion
+    orquestacion = _con_flujo(reporte, "evaluador", duracion)
+
+    decision, costo, duracion = _ejecutar_paso(fecha, "evaluador", AGENTE_ORQUESTADOR_CIERRE, {
+        "enfoque_del_dia": (orquestacion.get("plan") or {}).get("enfoque"),
+        "evaluacion": evaluacion,
+    })
+    costo_total += costo
+    duracion_total += duracion
+    orquestacion = _con_flujo(
+        {"orquestacion": orquestacion}, "orquestador", duracion, "Decide con la evaluación",
+    )
+
+    reintento = decision.get("agente_reintento")
+
+    if decision["decision"] == "REINTENTAR" and reintento in AGENTES_REPORTE:
+
+        observacion = next(
+            (a["observacion"] for a in evaluacion["agentes"] if a["agente"] == reintento),
+            "",
+        )
+
+        # El agente observado y los siguientes (dependen de su resultado)
+        for agente in AGENTES_REPORTE[AGENTES_REPORTE.index(reintento):]:
+
+            campos, costo, duracion = TRABAJO[agente](
+                fecha, reporte, observacion if agente == reintento else None,
+            )
+            costo_total += costo
+            duracion_total += duracion
+
+            # Lo nuevo reemplaza a lo anterior para el siguiente agente
+            for clave, valor in campos.items():
+                reporte[clave] = (
+                    json.loads(valor) if clave in ("hallazgos", "recomendaciones") else valor
+                )
+
+            _actualizar_reporte(fecha, **campos)
+
+            orquestacion = _con_flujo(
+                {"orquestacion": orquestacion}, agente, duracion,
+                "Reintento con la observación del evaluador" if agente == reintento
+                else "Actualiza con el trabajo corregido",
+            )
+
+        reporte["orquestacion"] = orquestacion
+        evaluacion, costo, duracion = _evaluar(fecha, reporte)
+        costo_total += costo
+        duracion_total += duracion
+        orquestacion = _con_flujo(
+            {"orquestacion": orquestacion}, "evaluador", duracion, "Segunda evaluación",
+        )
+
+        decision = {
+            "decision": "APROBAR",
+            "agente_reintento": reintento,
+            "motivo": (
+                f"Tras corregir al agente {reintento}, la nota final es "
+                f"{evaluacion['nota_final']} ({evaluacion['veredicto'].lower()})."
+            ),
+        }
+
+    orquestacion["decision"] = decision
+
+    _actualizar_reporte(
+        fecha, costo=costo_total, duracion_ms=duracion_total,
         estado="LISTO",
-        etapa=3,
-        titulo=redaccion["titulo"][:200],
-        calificacion=redaccion["calificacion"],
-        resumen=redaccion["resumen"],
-        conclusion=redaccion["conclusion"],
+        etapa=ULTIMO_PASO,
+        orquestacion=_json(orquestacion),
+        evaluacion=_json(evaluacion),
+        nota_final=(
+            Decimal(str(evaluacion["nota_final"]))
+            if evaluacion["nota_final"] is not None else None
+        ),
         error=None,
     )
 
     return obtener_reporte(fecha)
 
 
+def paso_analista(fecha):
+    return _paso_agente(fecha, "analista")
+
+
+def paso_estratega(fecha):
+    return _paso_agente(fecha, "estratega")
+
+
+def paso_redactor(fecha):
+    return _paso_agente(fecha, "redactor")
+
+
 EJECUTAR_PASO = {
+    "orquestador": paso_orquestador,
     "analista": paso_analista,
     "estratega": paso_estratega,
     "redactor": paso_redactor,
+    "evaluador": paso_evaluador,
 }
 
 
 def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
-    """Los 4 pasos en orden (lo usa Cloud Scheduler a las 23:00)."""
+    """Los 6 pasos en orden (lo usa Cloud Scheduler a las 23:00)."""
 
     reporte = paso_datos(fecha, origen)
 
@@ -723,17 +1003,18 @@ def generar_reporte_diario(fecha=None, origen="PROGRAMADO"):
 
     fecha = date.fromisoformat(reporte["fecha"])
 
-    paso_analista(fecha)
-    paso_estratega(fecha)
+    for paso in PASOS[1:]:
+        reporte = EJECUTAR_PASO[paso](fecha)
 
-    return paso_redactor(fecha)
+    return reporte
 
 
 _COLUMNAS = """
     fecha_reporte, fecha_generacion, origen, estado, metricas,
     hallazgos, recomendaciones, repartidores_sugeridos, titulo,
     resumen, costo_usd, duracion_ms, error,
-    calificacion, conclusion, franja_refuerzo, etapa
+    calificacion, conclusion, franja_refuerzo, etapa,
+    orquestacion, evaluacion, nota_final
 """
 
 
@@ -758,8 +1039,12 @@ def _fila_a_reporte(fila):
         "calificacion": fila[13],
         "conclusion": fila[14],
         "franja_refuerzo": fila[15],
-        # Reportes anteriores a los pasos: terminados = etapa 3
-        "etapa": fila[16] if fila[16] is not None else (3 if estado in ("LISTO", "SIN_DATOS") else None),
+        # Un reporte terminado tiene todos los pasos hechos (los
+        # anteriores al Orquestador guardaban etapa 3).
+        "etapa": ULTIMO_PASO if estado in ("LISTO", "SIN_DATOS") else fila[16],
+        "orquestacion": json.loads(fila[17]) if fila[17] else None,
+        "evaluacion": json.loads(fila[18]) if fila[18] else None,
+        "nota_final": _numero(fila[19]),
     }
 
 
