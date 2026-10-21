@@ -2560,6 +2560,19 @@ async function abrirMisPedidos() {
 let tokenMisPedidos = null;
 
 
+// La sesion se guarda en el navegador y la comparten todas las pestañas.
+// Si en otra pestaña se inicia o se cierra sesion (otra cuenta), esta se
+// recarga: si no, mostraria un nombre y consultaria con otra cuenta
+// (por ejemplo, "Aún no tienes pedidos" de una cuenta nueva).
+window.addEventListener("storage", (evento) => {
+
+    if (evento.key === "kimbos_token" && evento.oldValue !== evento.newValue) {
+        window.location.reload();
+    }
+
+});
+
+
 // Al entrar a la tienda con sesion, los pedidos se traen por detras
 // para que "Mis pedidos" abra sin esperar.
 document.addEventListener("DOMContentLoaded", () => {
