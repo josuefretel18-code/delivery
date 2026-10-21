@@ -20,6 +20,7 @@ from backend.routes.personal import personal_bp
 from backend.repartidores import asegurar_columna_turno
 from backend.routes.pedidos import asegurar_columnas_cancelacion, asegurar_columnas_pago
 from backend.horario import texto_horario
+from backend.ml_service import despertar_ml
 from backend.agentes_automaticos import asegurar_columnas_orquestacion
 
 
@@ -133,6 +134,11 @@ def panel_repartidor():
 
 @app.get("/api/health")
 def health():
+
+    # De paso despierta la API de ML (si lleva rato apagada), para que
+    # el siguiente pedido no espere a que arranque.
+    despertar_ml()
+
     return jsonify({
         "ok": True,
         "servicio": "delivery-api",

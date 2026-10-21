@@ -9,6 +9,8 @@ Acceso del sistema web al Machine Learning.
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 import requests
@@ -41,6 +43,35 @@ def _url(ruta):
 def _cabeceras():
 
     return {"X-API-Key": os.getenv("ML_API_KEY", "")}
+
+
+# La API de ML (Cloud Run) se apaga tras ~15 min sin uso y el primer
+# pedido despues esperaba a que arrancara y cargara el modelo. El aviso
+# de Cloud Scheduler que mantiene despierto este servidor (cada 10 min,
+# GET /api/health) tambien la despierta, en segundo plano.
+_ULTIMO_DESPERTAR = {"momento": 0.0}
+DESPERTAR_CADA_SEG = 5 * 60
+
+
+def despertar_ml():
+
+    if not ml_remoto():
+        return
+
+    ahora = time.monotonic()
+
+    if ahora - _ULTIMO_DESPERTAR["momento"] < DESPERTAR_CADA_SEG:
+        return
+
+    _ULTIMO_DESPERTAR["momento"] = ahora
+
+    def tarea():
+        try:
+            requests.get(_url("/salud"), timeout=(5, 60))
+        except Exception as error:
+            print(f"[ML] No se pudo despertar la API de ML: {error}", flush=True)
+
+    threading.Thread(target=tarea, daemon=True).start()
 
 
 # =========================================================

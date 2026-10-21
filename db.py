@@ -14,17 +14,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Abrir una conexion nueva a la BD tarda ~1 s (TLS); con el pool las
 # conexiones se reutilizan entre peticiones. Los scripts de ML y el job
 # de Google Cloud siguen abriendo conexiones directas.
-_POOL = {"instancia": None}
+_POOL = {"instancia": None, "minimo": 1, "maximo": 6}
 
 
-def usar_pool(minimo=1, maximo=6):
-
-    if _POOL["instancia"] is not None or not DATABASE_URL:
-        return
+def _crear_pool(minimo, maximo):
 
     from psycopg_pool import ConnectionPool
 
-    pool = ConnectionPool(
+    return ConnectionPool(
         DATABASE_URL,
         min_size=minimo,
         max_size=maximo,
@@ -32,9 +29,12 @@ def usar_pool(minimo=1, maximo=6):
         max_idle=180,
         max_lifetime=900,
         timeout=20,
-        # Si la BD estuvo caida (por ejemplo, Aiven gratis apagado), el
-        # pool sigue intentando reconectar en lugar de rendirse.
-        reconnect_timeout=24 * 3600,
+        # Reintentos de reconexion por poco tiempo: psycopg_pool espera
+        # cada vez el doble entre intentos y, si la BD estuvo apagada
+        # horas (Aiven gratis), el siguiente intento quedaba para dentro
+        # de horas con el pool "trabado". Si no conecta, este modulo
+        # crea un pool nuevo (ver _renovar_pool).
+        reconnect_timeout=120,
         # Antes de entregar una conexion se comprueba que siga viva (la
         # BD puede cerrar las inactivas); si no, se reemplaza por otra.
         check=ConnectionPool.check_connection,
@@ -48,27 +48,42 @@ def usar_pool(minimo=1, maximo=6):
         open=False,
     )
 
+
+def usar_pool(minimo=1, maximo=6):
+
+    if _POOL["instancia"] is not None or not DATABASE_URL:
+        return
+
+    pool = _crear_pool(minimo, maximo)
+
     # Sin esperar: la app arranca aunque la BD tarde en responder.
     pool.open(wait=False)
 
-    _POOL["instancia"] = pool
+    _POOL.update(instancia=pool, minimo=minimo, maximo=maximo)
 
 
-# Pool OCUPADO (mucho trafico): se espera en fila; como cada peticion
-# usa una sola conexion, se liberan en milisegundos.
-# Pool ROTO (sin ninguna conexion viva, por ejemplo tras una caida de
-# la BD): conexion directa al instante y reparacion en segundo plano.
-ESPERA_POOL_SEGUNDOS = 15
+# Cada peticion usa UNA conexion y el pool tiene mas conexiones (10)
+# que hilos el servidor (8): un pool sano entrega al instante. Si no
+# entrega en estos segundos esta trabado (la BD estuvo apagada): se usa
+# una conexion directa y se crea un pool nuevo en segundo plano.
+ESPERA_POOL_SEGUNDOS = 3
 
 _REPARANDO = {"activo": False}
+
+# Conexiones del pool entregadas y aun no devueltas. Si el pool no
+# entrega una conexion y este numero es menor que el maximo, el pool
+# esta trabado (no ocupado): solo entonces se renueva.
+_EN_USO = {"cantidad": 0}
+_CANDADO = threading.Lock()
 
 # Conexion en uso por el hilo actual (cada peticion corre en su hilo)
 _LOCAL = threading.local()
 
 
-def _reparar_pool(pool):
-    """En segundo plano: revisa las conexiones del pool y repone las
-    que falten (por ejemplo, despues de que la BD estuvo apagada)."""
+def _renovar_pool(pool_trabado):
+    """En segundo plano: crea un pool nuevo y, cuando ya tiene una
+    conexion lista, reemplaza al trabado (que se cierra). Mientras tanto
+    las peticiones usan conexiones directas."""
 
     if _REPARANDO["activo"]:
         return
@@ -76,10 +91,30 @@ def _reparar_pool(pool):
     _REPARANDO["activo"] = True
 
     def tarea():
+
+        nuevo = None
+
         try:
-            pool.check()
+            nuevo = _crear_pool(_POOL["minimo"], _POOL["maximo"])
+            nuevo.open(wait=True, timeout=30)
+
+            _POOL["instancia"] = nuevo
+            print("[BD] Pool renovado: conexiones listas", flush=True)
+
+            try:
+                pool_trabado.close(timeout=2)
+            except Exception:
+                pass
+
         except Exception as error:
-            print(f"[BD] No se pudo reparar el pool: {error}", flush=True)
+            print(f"[BD] No se pudo renovar el pool: {error}", flush=True)
+
+            if nuevo is not None:
+                try:
+                    nuevo.close(timeout=1)
+                except Exception:
+                    pass
+
         finally:
             _REPARANDO["activo"] = False
 
@@ -107,8 +142,8 @@ def get_connection():
     bloqueado. La parte interna va en un punto de guardado (SAVEPOINT):
     si falla, se deshace solo esa parte y la operacion principal sigue.
 
-    Si el pool no entrega una conexion (BD caida), se usa una conexion
-    directa y el pool se repara en segundo plano."""
+    Si el pool no entrega una conexion (BD caida o pool trabado), se usa
+    una conexion directa y se crea un pool nuevo en segundo plano."""
 
     if not DATABASE_URL:
         raise RuntimeError(
@@ -134,15 +169,27 @@ def get_connection():
         if pool.get_stats().get("pool_size", 0) == 0:
             # Sin conexiones vivas: no esperar, conexion directa
             print("[BD] Pool sin conexiones: se usa una conexión directa", flush=True)
-            _reparar_pool(pool)
+            _renovar_pool(pool)
 
         else:
             try:
                 conn = pool.getconn(timeout=ESPERA_POOL_SEGUNDOS)
                 del_pool = True
+
+                with _CANDADO:
+                    _EN_USO["cantidad"] += 1
+
             except PoolTimeout:
-                print("[BD] El pool no respondió: se usa una conexión directa", flush=True)
-                _reparar_pool(pool)
+
+                with _CANDADO:
+                    ocupado = _EN_USO["cantidad"] >= _POOL["maximo"]
+
+                if ocupado:
+                    # Mucho trafico: todas las conexiones estan en uso
+                    print("[BD] Pool ocupado: se usa una conexión directa", flush=True)
+                else:
+                    print("[BD] El pool no respondió: se usa una conexión directa", flush=True)
+                    _renovar_pool(pool)
 
     if conn is None:
         conn = _conexion_directa()
@@ -164,7 +211,15 @@ def get_connection():
         _LOCAL.conn = None
 
         if del_pool:
-            pool.putconn(conn)
+
+            with _CANDADO:
+                _EN_USO["cantidad"] -= 1
+
+            try:
+                pool.putconn(conn)
+            except Exception:
+                # El pool se renovo mientras se usaba: se cierra suelta
+                conn.close()
         else:
             conn.close()
 

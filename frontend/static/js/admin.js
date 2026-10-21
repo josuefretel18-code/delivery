@@ -498,9 +498,13 @@ async function cargarPedidosAdmin(silencioso = false) {
             "d-none"
         );
 
-        alert(
-            error.message
-        );
+        // En la actualizacion automatica no se interrumpe con un
+        // mensaje: se vuelve a intentar en la siguiente vuelta.
+        if (silencioso) {
+            console.warn("Actualización automática:", error.message);
+        } else {
+            alert(error.message);
+        }
 
     }
 
@@ -3709,7 +3713,9 @@ setInterval(async () => {
         localStorage.getItem("kimbos_admin_token") &&
         !document.querySelector(".modal.show") &&
         document.visibilityState === "visible" &&
-        !document.activeElement?.closest?.("#listaPedidosAdmin") &&
+        // Pausa solo si se esta escribiendo o eligiendo en un campo de
+        // la lista (un boton pulsado no debe detener la actualizacion)
+        !document.activeElement?.matches?.("#listaPedidosAdmin input, #listaPedidosAdmin select, #listaPedidosAdmin textarea") &&
         typeof cargarPedidosAdmin === "function"
     ) {
         panelActualizando = true;
@@ -3955,6 +3961,8 @@ async function cargarConteoPedidos() {
 
     conteoPedidos = datos.conteo || {};
 
+    avisarPedidosNuevos(conteoPedidos);
+
     const total = (estados) => estados.reduce((s, e) => s + (conteoPedidos[e] || 0), 0);
 
     const totales = {
@@ -3973,6 +3981,48 @@ async function cargarConteoPedidos() {
     });
 
     elegirModuloInicial();
+}
+
+
+// Total de pedidos visto en la vuelta anterior (null = primera carga)
+let totalPedidosAnterior = null;
+
+
+/* Si el total de pedidos subio desde la ultima vuelta, entro un pedido. */
+function avisarPedidosNuevos(conteo) {
+
+    const total = Object.values(conteo).reduce((suma, n) => suma + (n || 0), 0);
+
+    if (totalPedidosAnterior !== null && total > totalPedidosAnterior) {
+
+        const nuevos = total - totalPedidosAnterior;
+
+        mostrarAvisoAdmin(
+            nuevos === 1 ? "🔔 Nuevo pedido recibido" : `🔔 ${nuevos} pedidos nuevos`
+        );
+    }
+
+    totalPedidosAnterior = total;
+}
+
+
+function mostrarAvisoAdmin(texto) {
+
+    let aviso = document.getElementById("avisoAdmin");
+
+    if (!aviso) {
+        aviso = document.createElement("div");
+        aviso.id = "avisoAdmin";
+        aviso.className = "aviso-admin";
+        aviso.setAttribute("role", "status");
+        document.body.appendChild(aviso);
+    }
+
+    aviso.textContent = texto;
+    aviso.classList.add("visible");
+
+    clearTimeout(aviso._temporizador);
+    aviso._temporizador = setTimeout(() => aviso.classList.remove("visible"), 6000);
 }
 
 
