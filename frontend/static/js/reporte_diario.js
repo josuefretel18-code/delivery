@@ -283,7 +283,7 @@
     ===================================================== */
 
     /* Paso 0: indicadores del día (calculados con SQL) */
-    function vistaDatos(r) {
+    function vistaDatos(r, { sinIndicadores = false } = {}) {
 
         const m = r.metricas || {};
         const ml = m.modelo_ml || {};
@@ -354,7 +354,7 @@
         );
 
         return `
-            ${seccion("📊 Indicadores del día", kpis, "Calculados por el sistema con SQL; los agentes los interpretan.")}
+            ${sinIndicadores ? "" : seccion("📊 Indicadores del día", kpis, "Calculados por el sistema con SQL; los agentes los interpretan.")}
             ${seccion("Operación del día", `
                 <div class="rep-dos">
                     <div>
@@ -455,9 +455,86 @@
                 <h2>${escapar(r.titulo)}</h2>
                 <p class="mb-0">${escapar(r.resumen)}</p>
             </div>
+            ${puntosInforme(r)}
             ${r.conclusion
-                ? seccion("Conclusión y foco para mañana", `<div class="rep-conclusion">${escapar(r.conclusion)}</div>`)
+                ? seccion("Prioridad para mañana", `<div class="rep-conclusion">${escapar(r.conclusion)}</div>`)
                 : ""}
+            ${resumenSintetico(r) ? seccion("Resumen sintético del día", resumenSintetico(r)) : ""}
+        `;
+    }
+
+
+    /* Resumen sintético del día: las cifras las calcula el sistema y
+       el Agente Redactor escribe el estado y la lectura de cada una. */
+    function resumenSintetico(r) {
+
+        const rs = (r.metricas || {}).resumen_sintetico;
+
+        if (!rs) {
+            return "";
+        }
+
+        const lecturas = {};
+        ((r.puntos || {}).resumen_sintetico || []).forEach((x) => { lecturas[x.indicador] = x; });
+
+        const ESTADO = { BIEN: ["ok", "✅ Bien"], ATENCION: ["aviso", "⚠️ Atención"], CRITICO: ["mal", "⛔ Crítico"] };
+
+        const caja = rs.diferencia_caja || {};
+        const cancelacion = rs.tasa_cancelacion || {};
+        const merma = rs.merma_y_empaques || {};
+
+        const filas = [
+            ["TICKET_PROMEDIO", "Ticket promedio", soles((rs.ticket_promedio || {}).valor_soles),
+                (rs.ticket_promedio || {}).detalle || ""],
+            ["DIFERENCIA_CAJA", "Diferencia de caja", soles(caja.valor_soles),
+                `Vendido ${soles(caja.vendido_entregado_soles)} · cobrado ${soles(caja.cobrado_confirmado_soles)}` +
+                (caja.pedidos_sin_confirmar ? ` · ${caja.pedidos_sin_confirmar} pago(s) por confirmar` : "")],
+            ["TASA_CANCELACION", "Tasa de cancelación", porcentaje(cancelacion.valor_pct),
+                `${cancelacion.cancelados ?? 0} de ${cancelacion.pedidos ?? 0} pedidos`],
+            ["MERMA_Y_EMPAQUES", "Costo de merma y empaques", soles(merma.valor_soles),
+                `Empaques ${soles(merma.empaques_soles)} (${merma.pedidos_preparados ?? 0} × ${soles(merma.costo_empaque_por_pedido_soles)}) · merma ${soles(merma.merma_soles)}`]
+        ].map(([clave, nombre, valor, detalle]) => {
+
+            const lectura = lecturas[clave];
+            const [tono, etiqueta] = ESTADO[lectura?.estado] || ["neutro", "—"];
+
+            return [
+                `<strong>${nombre}</strong>`,
+                `<span class="inf-res-valor">${valor}</span><div class="rep-muted">${escapar(detalle)}</div>`,
+                lectura ? chip(etiqueta, tono) : "",
+                escapar(lectura?.lectura || "")
+            ];
+        });
+
+        return `
+            ${tabla(["Indicador", "Resultado", "Estado", "Lectura"], filas, "")}
+            ${merma.supuesto ? `<p class="rep-muted mt-2 mb-0">* ${escapar(merma.supuesto)}</p>` : ""}
+        `;
+    }
+
+
+    /* "Lo que funcionó" y "A vigilar" del Redactor (en dos columnas) */
+    function puntosInforme(r) {
+
+        const p = r.puntos;
+
+        if (!p || (!(p.lo_que_funciono || []).length && !(p.a_vigilar || []).length)) {
+            return "";
+        }
+
+        const lista = (puntos) => `<ul>${(puntos || []).map((x) => `<li>${escapar(x)}</li>`).join("")}</ul>`;
+
+        return `
+            <div class="inf-puntos">
+                <div class="inf-punto inf-punto-ok">
+                    <div class="inf-punto-titulo">Lo que funcionó</div>
+                    ${lista(p.lo_que_funciono)}
+                </div>
+                <div class="inf-punto inf-punto-aviso">
+                    <div class="inf-punto-titulo">A vigilar</div>
+                    ${lista(p.a_vigilar)}
+                </div>
+            </div>
         `;
     }
 
@@ -560,17 +637,183 @@
     }
 
 
+    /* =====================================================
+       INFORME (vista "Reporte completo" y PDF)
+       Se lee como un informe de gerencia: membrete, resumen
+       ejecutivo, cifras clave, lo que funcionó / a vigilar, plan de
+       acción y detalle. El trabajo de los agentes va como anexo.
+    ===================================================== */
+
+    function fechaLarga(iso) {
+
+        const texto = new Date(`${iso}T12:00:00`).toLocaleDateString("es-PE", {
+            weekday: "long", day: "numeric", month: "long", year: "numeric"
+        });
+
+        return texto.charAt(0).toUpperCase() + texto.slice(1);
+    }
+
+
+    function membrete(r) {
+
+        const [icono, texto, tono] = CALIFICACION[r.calificacion] || ["", "", "neutro"];
+
+        return `
+            <header class="inf-membrete">
+                <div>
+                    <div class="inf-tipo">Informe operativo diario</div>
+                    <div class="inf-fecha">${fechaLarga(r.fecha)}</div>
+                    <div class="inf-meta">
+                        Kimbos Delivery ·
+                        ${r.origen === "PROGRAMADO" ? "Generado automáticamente a las 23:00" : "Generado a pedido del administrador"}
+                    </div>
+                </div>
+                <div class="inf-sellos">
+                    ${r.calificacion ? chip(texto, tono, icono) : ""}
+                    ${r.nota_final !== null && r.nota_final !== undefined
+                        ? chip(`Calidad verificada ${Number(r.nota_final).toFixed(1)}/10`, tonoNota(Number(r.nota_final)), "⭐")
+                        : ""}
+                </div>
+            </header>
+        `;
+    }
+
+
+    /* Cinco cifras clave con su comparación */
+    function cifrasClave(r) {
+
+        const m = r.metricas || {};
+        const ml = m.modelo_ml || {};
+        const ayer = (m.comparacion || {}).dia_anterior || {};
+        const aTiempo = m.porcentaje_retrasos === null || m.porcentaje_retrasos === undefined
+            ? null
+            : Math.round((100 - Number(m.porcentaje_retrasos)) * 10) / 10;
+
+        const cifra = (titulo, valor, detalle) => `
+            <div class="inf-cifra">
+                <div class="inf-cifra-titulo">${titulo}</div>
+                <div class="inf-cifra-valor">${valor}</div>
+                <div class="inf-cifra-detalle">${detalle || "&nbsp;"}</div>
+            </div>
+        `;
+
+        return `
+            <div class="inf-cifras">
+                ${cifra("Pedidos", m.pedidos ?? 0, badgeComparacion(m.pedidos, ayer.pedidos, "vs ayer", { decimales: 1 }))}
+                ${cifra("Ventas", soles(m.ventas_soles), badgeComparacion(m.ventas_soles, ayer.ventas_soles, "vs ayer", { prefijo: "S/ ", decimales: 2 }))}
+                ${cifra("Ticket promedio", soles(m.ticket_promedio_soles), "Gasto por pedido")}
+                ${cifra("Entregas a tiempo", aTiempo === null ? "--" : `${aTiempo} %`,
+                    `${m.entregas_evaluadas ?? 0} entregas · ${m.tiempo_real_promedio_min ?? "--"} min prom.`)}
+                ${cifra("Acierto de la predicción", porcentaje(ml.porcentaje_acierto),
+                    `${ml.aciertos ?? 0} de ${ml.predicciones_evaluadas ?? 0} pedidos`)}
+            </div>
+        `;
+    }
+
+
+    function planDeAccion(r) {
+
+        const filas = (r.recomendaciones || []).map(normalizarRecomendacion).map((x, i) => [
+            `<span class="inf-num">${i + 1}</span>`,
+            `<strong>${escapar(x.titulo)}</strong><div class="rep-muted">${escapar(x.accion)}</div>`,
+            escapar(RESPONSABLE[x.responsable] || x.responsable || "--"),
+            escapar(x.horario || "--"),
+            escapar(x.meta || "--"),
+            chip(x.prioridad, PRIORIDAD[x.prioridad] || "neutro")
+        ]);
+
+        return `
+            <div class="rep-refuerzo">
+                🛵 Equipo sugerido para mañana: <strong>${r.repartidores_sugeridos ?? "--"} repartidores</strong>
+                ${r.franja_refuerzo ? ` · reforzar de ${escapar(r.franja_refuerzo)}` : ""}
+            </div>
+            ${tabla(["#", "Acción", "Responsable", "Horario", "Meta", "Prioridad"], filas, "Sin acciones.")}
+        `;
+    }
+
+
+    function hallazgosInforme(r) {
+
+        const hallazgos = (r.hallazgos || []).map(normalizarHallazgo).map((h) => {
+            const [icono, etiqueta, tono] = TIPO_HALLAZGO[h.tipo] || TIPO_HALLAZGO.NEUTRO;
+            return `
+                <div class="rep-hallazgo rep-hallazgo-${tono}">
+                    <div class="rep-hallazgo-cab">
+                        ${chip(etiqueta, tono, icono)}
+                        ${h.titulo ? `<strong>${escapar(h.titulo)}</strong>` : ""}
+                    </div>
+                    <div>${escapar(h.detalle)}</div>
+                </div>
+            `;
+        }).join("");
+
+        return `<div class="rep-hallazgos">${hallazgos || `<p class="rep-muted">Sin hallazgos.</p>`}</div>`;
+    }
+
+
     function vistaCompleta(r) {
 
-        // Orden de lectura: primero el resumen (lo que lee el jefe) y la
-        // calificación; luego los datos y el trabajo de cada agente.
+        // Mientras se genera, o si es un reporte a medias, se muestran
+        // los pasos en el orden de los agentes.
+        if (r.estado !== "LISTO" || !r.titulo) {
+            return `
+                ${vistaRedactor(r)}
+                ${vistaDatos(r)}
+                ${vistaOrquestador(r)}
+                ${vistaAnalista(r)}
+                ${vistaEstratega(r)}
+                ${vistaEvaluador(r)}
+            `;
+        }
+
         return `
-            ${vistaRedactor(r)}
-            ${vistaEvaluador(r)}
-            ${vistaDatos(r)}
-            ${vistaOrquestador(r)}
-            ${vistaAnalista(r)}
-            ${vistaEstratega(r)}
+            <article class="inf">
+
+                ${membrete(r)}
+
+                <section class="inf-resumen">
+                    <div class="inf-etiqueta">Resumen ejecutivo</div>
+                    <h2>${escapar(r.titulo)}</h2>
+                    <p>${escapar(r.resumen)}</p>
+                </section>
+
+                ${cifrasClave(r)}
+
+                ${puntosInforme(r)}
+
+                ${r.conclusion ? `
+                    <div class="inf-prioridad">
+                        <div class="inf-etiqueta">Prioridad número uno para mañana</div>
+                        <div>${escapar(r.conclusion)}</div>
+                    </div>
+                ` : ""}
+
+                ${seccion("1. Plan de acción para mañana", planDeAccion(r))}
+
+                ${seccion("2. Hallazgos del día", hallazgosInforme(r))}
+
+                <div class="inf-detalle">
+                    <div class="inf-separador">3. Detalle de la operación</div>
+                    ${vistaDatos(r, { sinIndicadores: true })}
+                </div>
+
+                ${resumenSintetico(r) ? `
+                    <div class="inf-separador">4. Resumen sintético del día</div>
+                    <div class="inf-sintesis">${resumenSintetico(r)}</div>
+                ` : ""}
+
+                <div class="inf-anexo">
+                    <div class="inf-separador">Anexo · Control de calidad del sistema multiagente</div>
+                    <p class="rep-muted">
+                        Este informe lo prepararon 5 agentes de IA: el Orquestador planificó el trabajo,
+                        tres agentes de automatización lo hicieron y el Evaluador calificó su calidad.
+                        Las cifras las calcula el sistema; los agentes solo las interpretan.
+                    </p>
+                    ${vistaOrquestador(r)}
+                    ${vistaEvaluador(r)}
+                </div>
+
+            </article>
         `;
     }
 
@@ -839,7 +1082,9 @@
                              border-bottom: 3px solid #ff6b00; padding-bottom: 8px; margin-bottom: 16px; }
                     .marca strong { font-size: 22px; letter-spacing: .04em; }
                     .marca span { color: #52514e; font-size: 12px; }
-                    .rep-kpi, .rep-hallazgo, .rep-tabla tr, .rep-resumen, .rep-conclusion { break-inside: avoid; }
+                    .rep-kpi, .rep-hallazgo, .rep-tabla tr, .rep-resumen, .rep-conclusion,
+                    .inf-cifra, .inf-punto, .inf-prioridad, .inf-membrete { break-inside: avoid; }
+                    .inf-separador { break-after: avoid; }
                     h3 { break-after: avoid; }
                     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     ${ESTILOS}
@@ -1032,6 +1277,41 @@
         .rep-barra-f { height: 12px; border-radius: 0 4px 4px 0; background: #2a78d6; min-width: 2px; }
         .rep-pie { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e1e0d9; font-size: 11px; color: #898781; }
 
+        /* Informe de gerencia */
+        .inf { color: #1d1d1b; }
+        .inf-membrete { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start;
+                        padding-bottom: 14px; margin-bottom: 18px; border-bottom: 2px solid #1d1d1b; }
+        .inf-tipo { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #ff6b00; }
+        .inf-fecha { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+        .inf-meta { font-size: 12px; color: #52514e; }
+        .inf-sellos { display: flex; flex-wrap: wrap; gap: 6px; }
+        .inf-etiqueta { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #52514e; margin-bottom: 4px; }
+        .inf-resumen h2 { font-size: 21px; margin: 0 0 6px; }
+        .inf-resumen p { font-size: 15px; line-height: 1.6; margin: 0; max-width: 75ch; }
+        .inf-cifras { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+        .inf-cifra { border: 1px solid #ecebe6; border-radius: 12px; padding: 10px 12px; background: #fff; }
+        .inf-cifra-titulo { font-size: 11.5px; color: #52514e; font-weight: 600; }
+        .inf-cifra-valor { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.25; }
+        .inf-cifra-detalle { font-size: 11px; color: #898781; margin-top: 2px; }
+        .inf-puntos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+        .inf-punto { border-radius: 12px; padding: 12px 14px; border: 1px solid; }
+        .inf-punto ul { margin: 0; padding-left: 18px; }
+        .inf-punto li { margin: 3px 0; }
+        .inf-punto-titulo { font-weight: 700; margin-bottom: 4px; }
+        .inf-punto-ok { background: #f3faf3; border-color: #cfe9cf; }
+        .inf-punto-ok .inf-punto-titulo { color: #1d5e1d; }
+        .inf-punto-aviso { background: #fffaeb; border-color: #f3d98f; }
+        .inf-punto-aviso .inf-punto-titulo { color: #6b4d00; }
+        .inf-prioridad { margin: 14px 0 4px; padding: 12px 16px; border-left: 4px solid #ff6b00; background: #fff8f2;
+                         border-radius: 8px; font-size: 15px; font-weight: 600; }
+        .inf-num { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center;
+                   background: #1d1d1b; color: #fff; font-size: 11px; font-weight: 700; }
+        .inf-separador { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e1e0d9; font-size: 15px; font-weight: 700; }
+        .inf-detalle .rep-seccion:first-child, .inf-anexo .rep-seccion:first-of-type { margin-top: 12px; }
+        .inf-anexo { margin-top: 10px; }
+        .inf-sintesis { margin-top: 12px; }
+        .inf-res-valor { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
         /* Orquestador y Evaluador */
         .rep-seccion h3 .rep-chip { vertical-align: middle; margin-left: 4px; }
         .rep-encargo { font-size: 12px; color: #4b43a8; margin: -2px 0 8px; }
@@ -1055,6 +1335,8 @@
         }
 
         @media (max-width: 860px) {
+            .inf-cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .inf-puntos { grid-template-columns: 1fr; }
             .rep-pasos { grid-template-columns: 1fr; }
             .rep-kpis { grid-template-columns: repeat(2, 1fr); }
             .rep-dos { grid-template-columns: 1fr; }

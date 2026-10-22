@@ -45,6 +45,17 @@ from backend.repartidores import repartidores_en_turno
 ZONA = "America/Lima"
 
 
+def costo_empaque_pedido():
+    """Costo de empaque por pedido preparado (S/). No hay costos en la
+    BD: es un supuesto configurable (COSTO_EMPAQUE_PEDIDO) y el reporte
+    lo muestra como tal."""
+
+    try:
+        return max(float(os.getenv("COSTO_EMPAQUE_PEDIDO", "1.00")), 0.0)
+    except ValueError:
+        return 1.0
+
+
 # =========================================================
 # TABLA
 # =========================================================
@@ -236,6 +247,40 @@ def metricas_del_dia(fecha):
                 for fila in cur.fetchall()
             ]
 
+            # Resumen sintetico: caja, cancelacion, merma y empaques.
+            # "Preparado" = el pedido llego a cocina (paso por PREPARANDO
+            # o EN_RUTA, o ya se entrego).
+            cur.execute(f"""
+                WITH dia AS (
+                    SELECT
+                        p.total,
+                        p.subtotal,
+                        p.pago_estado,
+                        e.codigo AS estado,
+                        EXISTS (
+                            SELECT 1
+                            FROM historial_pedido h
+                            JOIN estados_pedido eh ON eh.id = h.estado_id
+                            WHERE h.pedido_id = p.id
+                              AND eh.codigo IN ('PREPARANDO', 'EN_RUTA')
+                        ) AS paso_por_cocina
+                    FROM pedidos p
+                    JOIN estados_pedido e ON e.id = p.estado_id
+                    WHERE {filtro}
+                )
+                SELECT
+                    COALESCE(SUM(total) FILTER (WHERE estado = 'ENTREGADO'), 0),
+                    COALESCE(SUM(total) FILTER (WHERE estado = 'ENTREGADO' AND pago_estado = 'PAGADO'), 0),
+                    COUNT(*) FILTER (WHERE estado = 'ENTREGADO' AND pago_estado <> 'PAGADO'),
+                    COUNT(*) FILTER (WHERE estado = 'ENTREGADO' OR paso_por_cocina),
+                    COUNT(*) FILTER (WHERE estado = 'CANCELADO' AND paso_por_cocina),
+                    COALESCE(SUM(subtotal) FILTER (WHERE estado = 'CANCELADO' AND paso_por_cocina), 0)
+                FROM dia;
+            """, (fecha,))
+
+            (vendido_entregado, cobrado, sin_confirmar, preparados,
+             cancelados_en_cocina, merma) = cur.fetchone()
+
             dia_anterior = _resumen_rango(cur, fecha, 1, 1)
             semana_previa = _resumen_rango(cur, fecha, 7, 7)
 
@@ -276,6 +321,53 @@ def metricas_del_dia(fecha):
         "comparacion": {
             "dia_anterior": dia_anterior,
             "promedio_diario_7_dias_previos": semana_previa,
+        },
+        "resumen_sintetico": _resumen_sintetico(
+            total, cancelados, float(ventas), vendidos,
+            float(vendido_entregado), float(cobrado), sin_confirmar,
+            preparados, cancelados_en_cocina, float(merma),
+        ),
+    }
+
+
+def _resumen_sintetico(total, cancelados, ventas, vendidos, vendido_entregado,
+                       cobrado, sin_confirmar, preparados,
+                       cancelados_en_cocina, merma):
+    """Cuatro indicadores para cerrar el reporte (calculados aqui; el
+    Redactor solo escribe su lectura)."""
+
+    empaque = costo_empaque_pedido()
+    costo_empaques = round(preparados * empaque, 2)
+
+    return {
+        "ticket_promedio": {
+            "valor_soles": round(ventas / vendidos, 2) if vendidos else 0,
+            "detalle": f"S/ {ventas:.2f} en {vendidos} pedido(s) no cancelado(s)",
+        },
+        "diferencia_caja": {
+            # Vendido en pedidos entregados menos lo cobrado y confirmado
+            # (efectivo al entregar; Yape/Plin confirmados por el admin)
+            "valor_soles": round(vendido_entregado - cobrado, 2),
+            "vendido_entregado_soles": round(vendido_entregado, 2),
+            "cobrado_confirmado_soles": round(cobrado, 2),
+            "pedidos_sin_confirmar": sin_confirmar,
+        },
+        "tasa_cancelacion": {
+            "valor_pct": _porcentaje(cancelados, total),
+            "cancelados": cancelados,
+            "pedidos": total,
+        },
+        "merma_y_empaques": {
+            "valor_soles": round(costo_empaques + merma, 2),
+            "empaques_soles": costo_empaques,
+            "pedidos_preparados": preparados,
+            "costo_empaque_por_pedido_soles": empaque,
+            "merma_soles": round(merma, 2),
+            "cancelados_despues_de_cocina": cancelados_en_cocina,
+            "supuesto": (
+                f"Empaque estimado en S/ {empaque:.2f} por pedido; merma = comida de "
+                "pedidos cancelados despues de entrar a cocina, a precio de venta."
+            ),
         },
     }
 
@@ -415,6 +507,7 @@ Ademas:
 - repartidores_sugeridos: entero entre 1 y 6, segun los repartidores disponibles, la carga, la espera y los retrasos.
 - franja_refuerzo: franja horaria en la que mas se necesitan repartidores (segun la hora pico), por ejemplo "17:00 a 19:00".
 Si recibes "encargo" del Orquestador, tenlo en cuenta. Si recibes "observacion_evaluador", corrige lo que se te observo.
+Lo lee el dueno del negocio: sin codigos internos (nada como ASIGNAR_REPARTIDOR_EXTRA o MEDIO en mayusculas) ni jerga tecnica ("ML", "modelo"); di "alertas de riesgo" o "pedidos con riesgo de retraso".
 Espanol, frases cortas.""",
     "herramientas": {},
     "formato": _esquema("estrategia", {
@@ -446,23 +539,51 @@ Espanol, frases cortas.""",
 
 AGENTE_REDACTOR = {
     "nombre": "redactor",
-    "instrucciones": """Eres el Agente Redactor de Kimbos. Recibes los indicadores, los hallazgos y las recomendaciones del dia.
+    "instrucciones": """Eres el Agente Redactor de Kimbos, un delivery en Peru. Recibes los indicadores, los hallazgos y el plan del dia. Escribes el informe operativo que lee el dueno del negocio: alguien ocupado que no es tecnico y decide en un minuto.
 
-Redacta para el administrador:
-- titulo: corto, con la fecha (dd/mm) y la idea principal del dia.
-- calificacion: BUENO (sin retrasos importantes y ventas estables o en alza), REGULAR (algun problema puntual) o CRITICO (retrasos frecuentes o caida fuerte de ventas). Con menos de 5 pedidos, como maximo REGULAR si hubo algun retraso; si no, BUENO.
-- resumen: 3 frases (resumen ejecutivo) con las cifras mas importantes, la comparacion con ayer y la recomendacion principal.
-- conclusion: 1 o 2 frases con el foco para manana.
-No repitas todo: lo demas ya se muestra en tablas. Espanol de Peru, tono profesional.
+Redacta:
+- titulo: maximo 10 palabras, la idea principal del dia sin la fecha (ya se muestra aparte). Ejemplo: "Ventas en alza y entregas a tiempo".
+- calificacion: BUENO si no hubo retrasos importantes y las ventas estan estables o en alza (0 % de retrasos y ventas en alza siempre es BUENO, aunque haya pocos pedidos); REGULAR si hubo algun problema puntual; CRITICO si hubo retrasos frecuentes o una caida fuerte de ventas.
+- resumen: resumen ejecutivo de 2 o 3 frases (maximo 60 palabras): que paso, la cifra que mas importa y como se compara con ayer. Si hubo menos de 10 pedidos, termina indicando que las conclusiones son preliminares por el bajo volumen.
+- lo_que_funciono: de 1 a 3 puntos, cada uno una frase corta con su cifra.
+- a_vigilar: de 1 a 3 puntos con riesgos o problemas, cada uno una frase corta con su cifra. Si no hubo problemas, un punto preventivo (por ejemplo la hora pico).
+- conclusion: la prioridad numero uno para manana en una frase que empiece con un verbo (por ejemplo "Tener 2 repartidores en turno de 17:30 a 19:30").
+- resumen_sintetico: cierre del informe con EXACTAMENTE 4 indicadores, uno por cada clave de "resumen_sintetico" de los indicadores (TICKET_PROMEDIO, DIFERENCIA_CAJA, TASA_CANCELACION, MERMA_Y_EMPAQUES). Para cada uno: estado (BIEN, ATENCION o CRITICO) y lectura (una frase con la cifra y que significa para el negocio). Criterios: diferencia de caja 0 es BIEN; mayor a 0 es ATENCION (hay pagos por confirmar; indica cuantos). Cancelacion hasta 5 % BIEN, hasta 15 % ATENCION, mas CRITICO. Merma y empaques: el estado depende SOLO de la merma (el empaque es un costo normal de cada pedido): merma 0 es BIEN; si hay merma, ATENCION. En la lectura aclara que el empaque es un costo estimado.
+
+Estilo:
+- Espanol de Peru, tono profesional y directo, en tercera persona.
+- Sin jerga tecnica: no digas "ML", "modelo", "F1" ni "predicciones"; di "el sistema de prediccion de retrasos acerto en 5 de 5 pedidos".
+- Montos como S/ 176.97 y porcentajes redondeados. Sin signos de exclamacion ni emojis.
+- No repitas tablas ni listes todas las cifras: solo lo que ayuda a decidir.
 Si recibes "encargo" del Orquestador, tenlo en cuenta. Si recibes "observacion_evaluador", corrige lo que se te observo.""",
     "herramientas": {},
     "formato": _esquema("reporte", {
         "titulo": {"type": "string"},
         "calificacion": {"type": "string", "enum": ["BUENO", "REGULAR", "CRITICO"]},
         "resumen": {"type": "string"},
+        "lo_que_funciono": {"type": "array", "items": {"type": "string"}},
+        "a_vigilar": {"type": "array", "items": {"type": "string"}},
         "conclusion": {"type": "string"},
+        "resumen_sintetico": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "indicador": {
+                        "type": "string",
+                        "enum": ["TICKET_PROMEDIO", "DIFERENCIA_CAJA",
+                                 "TASA_CANCELACION", "MERMA_Y_EMPAQUES"],
+                    },
+                    "estado": {"type": "string", "enum": ["BIEN", "ATENCION", "CRITICO"]},
+                    "lectura": {"type": "string"},
+                },
+                "required": ["indicador", "estado", "lectura"],
+                "additionalProperties": False,
+            },
+        },
     }),
     "max_pasos": 1,
+    "max_tokens": 1300,
 }
 
 
@@ -719,6 +840,7 @@ def paso_datos(fecha=None, origen="MANUAL"):
         calificacion=None,
         resumen=None,
         conclusion=None,
+        puntos=None,
         orquestacion=None,
         evaluacion=None,
         nota_final=None,
@@ -830,6 +952,19 @@ def _trabajo_redactor(fecha, reporte, observacion=None):
         "calificacion": redaccion["calificacion"],
         "resumen": redaccion["resumen"],
         "conclusion": redaccion["conclusion"],
+        "puntos": _json({
+            "lo_que_funciono": [str(p)[:200] for p in redaccion.get("lo_que_funciono", [])[:3]],
+            "a_vigilar": [str(p)[:200] for p in redaccion.get("a_vigilar", [])[:3]],
+            # Lectura del Redactor de cada indicador del resumen sintetico
+            "resumen_sintetico": [
+                {
+                    "indicador": x["indicador"],
+                    "estado": x["estado"],
+                    "lectura": str(x["lectura"])[:300],
+                }
+                for x in redaccion.get("resumen_sintetico", [])[:4]
+            ],
+        }),
     }, costo, duracion
 
 
@@ -874,11 +1009,37 @@ def _evaluar(fecha, reporte):
             "titulo": reporte["titulo"],
             "calificacion": reporte["calificacion"],
             "resumen": reporte["resumen"],
+            **(reporte.get("puntos") or {}),
             "conclusion": reporte["conclusion"],
         },
     })
 
     return _notas(evaluacion, AGENTES_REPORTE), costo, duracion
+
+
+def _decision_coherente(decision, evaluacion):
+    """El LLM decide, pero la decision debe cuadrar con las notas: solo
+    se reintenta a un agente con nota menor a 6 (el de nota mas baja);
+    si ninguno la tiene, se aprueba."""
+
+    notas = {a["agente"]: a["nota"] for a in evaluacion.get("agentes", [])}
+    bajos = sorted((nota, agente) for agente, nota in notas.items() if nota < 6)
+
+    if bajos and decision.get("agente_reintento") not in dict((a, n) for n, a in bajos):
+        return {
+            "decision": "REINTENTAR",
+            "agente_reintento": bajos[0][1],
+            "motivo": f"Regla 1: el agente {bajos[0][1]} tiene nota {bajos[0][0]} (menor a 6).",
+        }
+
+    if not bajos and decision.get("decision") != "APROBAR":
+        return {
+            "decision": "APROBAR",
+            "agente_reintento": "ninguno",
+            "motivo": "Regla 2: ningún agente tiene nota menor a 6; el reporte queda aprobado.",
+        }
+
+    return decision
 
 
 def paso_evaluador(fecha):
@@ -905,6 +1066,7 @@ def paso_evaluador(fecha):
         {"orquestacion": orquestacion}, "orquestador", duracion, "Decide con la evaluación",
     )
 
+    decision = _decision_coherente(decision, evaluacion)
     reintento = decision.get("agente_reintento")
 
     if decision["decision"] == "REINTENTAR" and reintento in AGENTES_REPORTE:
@@ -926,7 +1088,7 @@ def paso_evaluador(fecha):
             # Lo nuevo reemplaza a lo anterior para el siguiente agente
             for clave, valor in campos.items():
                 reporte[clave] = (
-                    json.loads(valor) if clave in ("hallazgos", "recomendaciones") else valor
+                    json.loads(valor) if clave in ("hallazgos", "recomendaciones", "puntos") else valor
                 )
 
             _actualizar_reporte(fecha, **campos)
@@ -1014,7 +1176,7 @@ _COLUMNAS = """
     hallazgos, recomendaciones, repartidores_sugeridos, titulo,
     resumen, costo_usd, duracion_ms, error,
     calificacion, conclusion, franja_refuerzo, etapa,
-    orquestacion, evaluacion, nota_final
+    orquestacion, evaluacion, nota_final, puntos
 """
 
 
@@ -1045,6 +1207,7 @@ def _fila_a_reporte(fila):
         "orquestacion": json.loads(fila[17]) if fila[17] else None,
         "evaluacion": json.loads(fila[18]) if fila[18] else None,
         "nota_final": _numero(fila[19]),
+        "puntos": json.loads(fila[20]) if fila[20] else None,
     }
 
 

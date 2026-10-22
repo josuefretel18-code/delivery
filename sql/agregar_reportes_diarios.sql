@@ -58,3 +58,6 @@ ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS etapa SMALLINT;
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS orquestacion TEXT;
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS evaluacion TEXT;
 ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS nota_final NUMERIC(4,1);
+
+-- Informe del Redactor: "Lo que funciono" y "A vigilar" (JSON).
+ALTER TABLE reportes_diarios ADD COLUMN IF NOT EXISTS puntos TEXT;

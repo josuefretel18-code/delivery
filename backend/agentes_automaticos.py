@@ -608,6 +608,24 @@ def generar_alerta_pedido(pedido_id, origen="AUTOMATICA"):
             "evaluacion": evaluacion,
         }, detalle="Decide con la evaluación")
 
+        # La decision debe cuadrar con las notas: solo se reintenta a un
+        # agente con nota menor a 6 (el de nota mas baja).
+        notas = {a["agente"]: a["nota"] for a in evaluacion["agentes"]}
+        bajos = sorted((nota, agente) for agente, nota in notas.items() if nota < 6)
+
+        if bajos and decision.get("agente_reintento") not in [a for _, a in bajos]:
+            decision = {
+                "decision": "REINTENTAR",
+                "agente_reintento": bajos[0][1],
+                "motivo": f"Regla 1: el agente {bajos[0][1]} tiene nota {bajos[0][0]} (menor a 6).",
+            }
+        elif not bajos and decision["decision"] == "REINTENTAR":
+            decision = {
+                "decision": "PUBLICAR" if evaluacion["veredicto"] == "APROBADO" else "SOLO_ADMIN",
+                "agente_reintento": "ninguno",
+                "motivo": "Ningún agente tiene nota menor a 6: no hace falta reintentar.",
+            }
+
         reintento = decision.get("agente_reintento")
 
         if decision["decision"] == "REINTENTAR" and reintento in NOMBRES_AGENTES:

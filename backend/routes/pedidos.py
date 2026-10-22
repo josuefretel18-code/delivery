@@ -1458,7 +1458,8 @@ def listar_pedidos():
                     COALESCE(
                         p.fuente_datos,
                         'REAL'
-                    )
+                    ),
+                    p.fecha_recojo
 
                 FROM pedidos p
 
@@ -1682,6 +1683,13 @@ def listar_pedidos():
                 ),
 
                     "fuente_datos": fila[27],
+
+                    # Salida con el repartidor (para la llegada estimada)
+                    "fecha_recojo": (
+                        fila[28].isoformat()
+                        if fila[28]
+                        else None
+                    ),
 
                     "productos": productos
                 })

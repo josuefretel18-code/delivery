@@ -3660,17 +3660,28 @@ function seguimientoEntrega(pedido) {
         const prometido = pedido.tiempo_estimado_total_min;
         const restantes = prometido !== null && transcurrido !== null ? prometido - transcurrido : null;
 
+        // Llegada estimada: la ruta menos lo que ya lleva en camino.
+        // El plazo prometido (que puede incluir una espera de repartidor
+        // que al final no hubo) queda como referencia.
+        const enRuta = minutosDesde(pedido.fecha_recojo);
+        const llegada = enRuta !== null && pedido.duracion_estimada_min !== null && pedido.duracion_estimada_min !== undefined
+            ? Math.max(pedido.duracion_estimada_min - enRuta, 0)
+            : null;
+
         let tiempo = "";
 
         if (restantes !== null) {
             tiempo = restantes >= 0
-                ? `<span class="seg-tiempo ${restantes <= 5 ? "seg-justo" : "seg-ok"}">${restantes <= 5 ? "⚠️" : "⏱️"} quedan ${restantes} min</span>`
+                ? `<span class="seg-tiempo ${restantes <= 5 ? "seg-justo" : "seg-ok"}">${restantes <= 5 ? "⚠️ justo a tiempo" : "✅ a tiempo"} · margen ${restantes} min</span>`
                 : `<span class="seg-tiempo seg-tarde">⛔ ${Math.abs(restantes)} min tarde</span>`;
         }
 
         return `
             <div class="seguimiento-entrega">
-                <div class="seg-titulo">🛵 En camino con ${nombre}</div>
+                <div class="seg-titulo">
+                    🛵 En camino con ${nombre}
+                    ${llegada !== null ? ` · llega en ~${llegada} min` : ""}
+                </div>
                 <div class="seg-detalle">
                     Pedido hace ${transcurrido ?? "--"} min · prometido ${prometido ?? "--"} min ${tiempo}
                 </div>

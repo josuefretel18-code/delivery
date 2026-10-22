@@ -222,10 +222,10 @@ def estimar_espera_repartidor(tiempo_preparacion_min):
 
     1. Cada repartidor en turno queda libre ya (sin pedidos) o al volver
        a la tienda: ida + vuelta (2 x ruta) menos lo que ya lleva fuera.
-    2. Los pedidos que esperan antes que este (sin repartidor) toman
-       primero los repartidores que se van liberando, en orden.
-    3. Espera = cuando queda libre un repartidor para este pedido menos
-       su tiempo de preparacion (nunca negativa).
+    2. Los pedidos sin repartidor (y el nuevo) toman los repartidores que
+       se van liberando en el orden en que su comida queda lista.
+    3. Espera = cuando sale este pedido menos su tiempo de preparacion
+       (nunca negativa).
 
     Sin repartidores registrados en turno devuelve 0 (comportamiento
     anterior: preparacion + ruta).
@@ -302,12 +302,29 @@ def estimar_espera_repartidor(tiempo_preparacion_min):
 
     heapq.heapify(libres_en)
 
-    for listo_en, ruta in en_espera:
-        libre = heapq.heappop(libres_en)
-        salida = max(libre, float(listo_en))
-        heapq.heappush(libres_en, salida + 2 * float(ruta))
+    # Los repartidores se llevan los pedidos segun su comida queda lista
+    # (no por orden de llegada): un pedido de preparacion corta sale
+    # antes que uno anterior que aun se esta cocinando. El pedido nuevo
+    # entra en la misma cola; ante un empate, primero los anteriores.
+    preparacion = float(tiempo_preparacion_min or 0)
 
-    espera = max(libres_en[0] - float(tiempo_preparacion_min or 0), 0)
+    cola = sorted(
+        [(float(listo_en), 0, float(ruta)) for listo_en, ruta in en_espera]
+        + [(preparacion, 1, None)]
+    )
+
+    espera = 0.0
+
+    for listo_en, es_nuevo, ruta in cola:
+
+        libre = heapq.heappop(libres_en)
+        salida = max(libre, listo_en)
+
+        if es_nuevo:
+            espera = max(salida - preparacion, 0)
+            break
+
+        heapq.heappush(libres_en, salida + 2 * ruta)
 
     resultado["espera_min"] = min(math.ceil(espera), ESPERA_MAXIMA_MIN)
 

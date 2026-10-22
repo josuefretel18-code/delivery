@@ -62,6 +62,10 @@ services:
       # Radio maximo de reparto (km) desde la sede
       - key: RADIO_COBERTURA_KM
         value: "10"
+      # Reporte diario: costo de empaque por pedido (S/), para el
+      # indicador "Costo de merma y empaques" (no hay costos en la BD).
+      - key: COSTO_EMPAQUE_PEDIDO
+        value: "1.00"
       - key: ALERTA_UMBRAL_RIESGO
         value: "0.4"
       - key: LLM_CORTE_AUTOMATIZACION_USD

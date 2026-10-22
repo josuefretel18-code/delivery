@@ -181,15 +181,21 @@ function etiquetaTiempo(pedido) {
         return "";
     }
 
+    // En ruta: llegada estimada (ruta menos lo que ya lleva en camino).
+    // "Quedan" es el plazo prometido al cliente, que puede ser mayor.
+    const llegada = pedido.estado?.codigo === "EN_RUTA" && pedido.ruta_min !== null && pedido.ruta_min !== undefined
+        ? `<span class="rep-tiempo rep-tiempo-ok">🛵 Llegas en ~${Math.max(pedido.ruta_min - (pedido.minutos_en_ruta || 0), 0)} min</span> `
+        : "";
+
     if (restantes > 5) {
-        return `<span class="rep-tiempo rep-tiempo-ok">⏱️ Quedan ${restantes} min</span>`;
+        return `${llegada}<span class="rep-tiempo rep-tiempo-ok">⏱️ Plazo: quedan ${restantes} min</span>`;
     }
 
     if (restantes >= 0) {
-        return `<span class="rep-tiempo rep-tiempo-justo">⚠️ Quedan ${restantes} min</span>`;
+        return `${llegada}<span class="rep-tiempo rep-tiempo-justo">⚠️ Plazo: quedan ${restantes} min</span>`;
     }
 
-    return `<span class="rep-tiempo rep-tiempo-tarde">⛔ ${Math.abs(restantes)} min tarde</span>`;
+    return `${llegada}<span class="rep-tiempo rep-tiempo-tarde">⛔ ${Math.abs(restantes)} min tarde</span>`;
 }
 
 
