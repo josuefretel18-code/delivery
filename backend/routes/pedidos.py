@@ -2176,10 +2176,16 @@ def resumen_ml():
 
                 ) pm ON TRUE
 
+                JOIN estados_pedido e
+                    ON e.id = p.estado_id
+
                 WHERE COALESCE(
                     p.fuente_datos,
                     'REAL'
                 ) = 'REAL'
+
+                  -- Un cancelado nunca se entrega: no queda "pendiente"
+                  AND e.codigo <> 'CANCELADO'
 
                 ORDER BY p.fecha_pedido DESC;
             """, (
