@@ -243,7 +243,7 @@
         data-bs-toggle="modal"
         data-bs-target="#modalReporteDiario"
     >
-        📋 Reporte diario
+        🧠 Agentes de IA
     </button>
 
     <button
@@ -839,11 +839,11 @@
 
                 <div>
                     <h4 class="fw-bold mb-1">
-                        Reporte diario
+                        Agentes de IA
                     </h4>
 
-                    <p class="text-secondary mb-0">
-                        Generado cada día a las 23:00 por 5 agentes: Orquestador → Analista de datos → Estratega → Redactor → Evaluador.
+                    <p class="text-secondary mb-0" id="subtituloReporte">
+                        Pregunta lo que necesites: trabajan 5 agentes (Orquestador → Analista → Estratega → Redactor → Evaluador).
                     </p>
                 </div>
 
@@ -858,10 +858,40 @@
 
             <div class="modal-body">
 
-                <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-                    <select id="selectorReporte" class="form-select form-select-sm w-auto"></select>
+                <div class="modos-agentes mb-3" role="tablist" aria-label="Modo">
+                    <button type="button" class="modo-agentes activo" data-modo="consulta" role="tab" aria-selected="true">
+                        💬 Preguntar a los agentes
+                    </button>
+                    <button type="button" class="modo-agentes" data-modo="reporte" role="tab" aria-selected="false">
+                        📅 Reporte diario (automático 23:00)
+                    </button>
+                </div>
 
-                    <button id="btnGenerarReporte" class="btn btn-sm btn-dark" type="button">
+                <form id="formConsulta" class="consulta-agentes mb-3">
+                    <label class="form-label fw-semibold mb-1" for="preguntaAgentes">¿Qué quieres saber del negocio?</label>
+                    <div class="d-flex gap-2">
+                        <input
+                            id="preguntaAgentes"
+                            class="form-control"
+                            maxlength="300"
+                            placeholder="Ej.: ¿Cómo nos fue esta semana con los retrasos?"
+                            autocomplete="off"
+                            required
+                        >
+                        <button id="btnPreguntar" class="btn btn-dark text-nowrap" type="submit">🤖 Preguntar</button>
+                    </div>
+                    <div class="consulta-ejemplos">
+                        <button type="button" data-ejemplo="¿Cómo nos fue esta semana con las ventas y los retrasos?">Ventas y retrasos de la semana</button>
+                        <button type="button" data-ejemplo="¿Qué productos se vendieron más ayer y a qué hora?">Lo más vendido ayer</button>
+                        <button type="button" data-ejemplo="¿Cuántos repartidores necesito para la hora pico de mañana?">Repartidores para mañana</button>
+                        <button type="button" data-ejemplo="¿Por qué se cancelaron pedidos este mes y cómo lo evitamos?">Cancelaciones del mes</button>
+                    </div>
+                </form>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                    <select id="selectorReporte" class="form-select form-select-sm w-auto" aria-label="Historial"></select>
+
+                    <button id="btnGenerarReporte" class="btn btn-sm btn-dark d-none" type="button">
                         🤖 Generar reporte de hoy
                     </button>
 

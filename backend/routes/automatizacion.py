@@ -2,7 +2,7 @@ import hmac
 import os
 from datetime import date
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from backend.decorators import roles_required
 from backend.agentes_automaticos import generar_alerta_pedido
@@ -12,6 +12,11 @@ from backend.agente_reporte import (
     generar_reporte_diario,
     listar_reportes,
     paso_datos,
+)
+from backend.agente_consultas import (
+    EJECUTAR_PASO as EJECUTAR_PASO_CONSULTA,
+    crear_consulta,
+    listar_consultas,
 )
 from backend.llm_agente import llm_configurado
 
@@ -185,3 +190,67 @@ def ejecutar_paso_reporte(paso):
         }), 500
 
     return jsonify({"ok": True, "paso": paso, "reporte": reporte})
+
+
+# =========================================================
+# CONSULTAS A LOS AGENTES (pregunta del administrador)
+# =========================================================
+
+@automatizacion_bp.get("/consultas")
+@roles_required("ADMIN", "OPERADOR")
+def ver_consultas():
+
+    try:
+        return jsonify({"ok": True, "consultas": listar_consultas(10)})
+    except Exception as error:
+        print(f"[AGENTES] Leer consultas: {type(error).__name__}: {error}", flush=True)
+        return jsonify({"ok": False, "mensaje": "No se pudieron leer las consultas."}), 500
+
+
+@automatizacion_bp.post("/consultas")
+@roles_required("ADMIN", "OPERADOR")
+def nueva_consulta():
+    """Registra la pregunta. Luego el panel ejecuta los 6 pasos en orden
+    con /consultas/<id>/pasos/<paso>."""
+
+    datos = request.get_json(silent=True) or {}
+
+    try:
+        consulta = crear_consulta(datos.get("pregunta"), g.usuario["id"])
+    except ValueError as error:
+        return jsonify({"ok": False, "mensaje": str(error)}), 400
+    except RuntimeError as error:
+        return jsonify({"ok": False, "mensaje": str(error)}), 503
+
+    return jsonify({"ok": True, "consulta": consulta}), 201
+
+
+@automatizacion_bp.post("/consultas/<int:consulta_id>/pasos/<paso>")
+@roles_required("ADMIN", "OPERADOR")
+def ejecutar_paso_consulta(consulta_id, paso):
+    """Un paso de la consulta (orquestador, datos, analista, estratega,
+    redactor, evaluador)."""
+
+    if paso not in EJECUTAR_PASO_CONSULTA:
+        return jsonify({"ok": False, "mensaje": "Paso no valido"}), 404
+
+    try:
+        consulta = EJECUTAR_PASO_CONSULTA[paso](consulta_id)
+
+    except PasoFueraDeOrden as error:
+        return jsonify({"ok": False, "mensaje": str(error)}), 409
+
+    except Exception as error:
+        print(f"[AGENTES] Consulta {consulta_id}, paso {paso}: {type(error).__name__}: {error}", flush=True)
+
+        return jsonify({
+            "ok": False,
+            "mensaje": (
+                str(error)
+                if isinstance(error, RuntimeError)
+                else "El agente no pudo completar este paso. Puedes reintentarlo."
+            )
+        }), 500
+
+    return jsonify({"ok": True, "paso": paso, "consulta": consulta})
+

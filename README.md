@@ -66,7 +66,7 @@ operativo diario.
 | Rol | Qué puede hacer |
 |---|---|
 | **Cliente** (`/`) | Registrarse, ver el catálogo, armar el carrito, elegir la dirección en el mapa (radio de reparto de 10 km), pagar en efectivo, Yape o Plin, ver el tiempo estimado (preparación + ruta + espera de repartidor), seguir sus pedidos (se actualizan cada 5 s), cancelar mientras el pedido está "Recibido" y consultar al asistente con IA. |
-| **Administrador / Operador** (`/admin`) | Gestionar los pedidos en 4 pasos (Recibidos → En preparación → En camino → Entregados) ordenados para el despacho, asignar repartidores, confirmar pagos, ver el dashboard en vivo, el Dashboard ML, el reporte diario multiagente, el catálogo, los repartidores, los clientes registrados y el personal (solo ADMIN), y usar el asistente con IA. |
+| **Administrador / Operador** (`/admin`) | Gestionar los pedidos en 4 pasos (Recibidos → En preparación → En camino → Entregados) ordenados para el despacho, asignar repartidores, confirmar pagos, ver el dashboard en vivo, el Dashboard ML, los agentes de IA (preguntas y reporte diario), el catálogo, los repartidores, los clientes registrados y el personal (solo ADMIN), y usar el asistente con IA. |
 | **Repartidor** (`/repartidor`) | Activar su turno, ver sus pedidos (el más urgente primero) con la llegada estimada y el plazo, abrir la ruta en Google Maps y marcar la entrega. |
 
 Otras reglas del negocio:
@@ -198,6 +198,28 @@ El resultado es un **informe operativo**:
   Evaluador).
 - Se puede exportar a PDF.
 
+### C) Consulta a los agentes (por pregunta del administrador): 5 agentes
+
+En "🧠 Agentes de IA → Preguntar a los agentes", el administrador
+escribe una pregunta ("¿cómo nos fue esta semana con los retrasos?",
+"¿cuántos repartidores necesito mañana?") y trabajan los mismos 5
+agentes, orientados a responderla
+([backend/agente_consultas.py](backend/agente_consultas.py)):
+
+```
+0 🧭 Orquestador (entiende la pregunta, elige el periodo y reparte encargos)
+→ 1 Datos del periodo (SQL) → 2 🔍 Analista → 3 🎯 Estratega
+→ 4 ✍️ Redactor (responde la pregunta) → 5 ⭐ Evaluador + decisión del Orquestador
+```
+
+- **Periodo:** el Orquestador interpreta "hoy", "ayer", "esta semana",
+  "la semana pasada" o "este mes"; el código valida las fechas (hasta
+  90 días atrás, nunca en el futuro).
+- **Preguntas ajenas al negocio** (fútbol, clima…): solo responde el
+  Orquestador y no se gasta en los demás agentes.
+- **Límite:** `LLM_CONSULTAS_DIARIAS` consultas por día (20 por
+  defecto). Costo medido: ≈ USD 0.006 por consulta.
+
 ### Reglas comunes
 
 - **Las cifras las calcula el sistema con SQL; los agentes solo las
@@ -207,7 +229,7 @@ El resultado es un **informe operativo**:
   (1 reintento) y se vuelve a evaluar. El código valida que la decisión
   cuadre con las notas.
 - **Días sin pedidos:** el reporte no llama al LLM (costo 0).
-- **Costo medido:** alerta ≈ USD 0.0009; reporte diario ≈ USD 0.005.
+- **Costo medido:** alerta ≈ USD 0.0009; reporte diario ≈ USD 0.005; consulta ≈ USD 0.006.
   Presupuesto mensual de USD 10, con cortes automáticos por tipo de uso
   (`LLM_CORTE_*`).
 
@@ -237,6 +259,7 @@ backend/
   llm_herramientas.py      Herramientas que usan los agentes
   agentes_automaticos.py   Multiagente A: alerta de pedido en riesgo
   agente_reporte.py        Multiagente B: reporte diario
+  agente_consultas.py      Multiagente C: preguntas del administrador
   routes/                  Endpoints (pedidos, catálogo, sedes, dashboard, automatización, ...)
 frontend/
   templates/               index (tienda), admin, repartidor, acceso
@@ -326,6 +349,7 @@ repositorio.
 | `TIENDA_APERTURA`, `TIENDA_CIERRE` | Horario de atención (hora de Lima) |
 | `RADIO_COBERTURA_KM` | Radio máximo de reparto |
 | `COSTO_EMPAQUE_PEDIDO` | Costo de empaque por pedido (S/) para el reporte diario |
+| `LLM_CONSULTAS_DIARIAS` | Máximo de preguntas a los agentes por día (20) |
 | `CORS_ORIGENES` | Orígenes permitidos para llamar a la API desde otro dominio |
 
 ---
@@ -365,7 +389,7 @@ Todas las rutas `/api` responden JSON (también en errores 404, 405 y
 | Pedidos (admin) | `GET /api/pedidos?estados=&limite=&desde=`, `GET /api/pedidos/conteo`, `PATCH /api/pedidos/<id>/estado`, `POST /api/pedidos/<id>/pago/confirmar` |
 | Repartidores | `GET/POST /api/repartidores`, `PATCH /api/repartidores/<id>`, panel: `/api/repartidor/perfil`, `/turno`, `/pedidos`, `/pedidos/<id>/entregado` |
 | Dashboard y ML | `GET /api/dashboard?periodo=1|7|30`, `GET /api/pedidos/ml/resumen`, `POST /api/pedidos/ml/reentrenar` |
-| Agentes | `POST /api/automatizacion/pedidos/<id>/alerta`, `POST /api/automatizacion/reportes/pasos/<paso>`, `GET /api/automatizacion/reportes`, `POST /api/automatizacion/reporte-diario` (Cloud Scheduler) |
+| Agentes | `POST /api/automatizacion/pedidos/<id>/alerta`, `POST /api/automatizacion/reportes/pasos/<paso>`, `GET /api/automatizacion/reportes`, `POST /api/automatizacion/reporte-diario` (Cloud Scheduler), `POST/GET /api/automatizacion/consultas`, `POST /api/automatizacion/consultas/<id>/pasos/<paso>` |
 | Asistentes | `POST /api/asistente/cliente`, `POST /api/asistente/admin`, `GET /api/asistente/estado` |
 | Personal y clientes | `GET/POST /api/personal`, `PATCH /api/personal/<id>`, `GET /api/personal/clientes` (solo ADMIN) |
 | Salud | `GET /api/health` |
@@ -382,6 +406,7 @@ Todas las rutas `/api` responden JSON (también en errores 404, 405 y
 | `predicciones_ml` | Predicción de cada pedido con las variables usadas |
 | `alertas_pedido` | Resultado del multiagente A (causa, acción, aviso al cliente y resumen) |
 | `reportes_diarios` | Resultado del multiagente B por día |
+| `consultas_agentes` | Preguntas del administrador y la respuesta de los 5 agentes |
 | `llm_uso` | Tokens, costo y duración de cada llamada al LLM |
 
 ---

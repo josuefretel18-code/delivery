@@ -1,5 +1,11 @@
 /* ========================================================
-   REPORTE DIARIO (sistema multiagente)
+   AGENTES DE IA: CONSULTAS Y REPORTE DIARIO (sistema multiagente)
+
+   Dos modos con el mismo stepper, vistas y PDF:
+   - Consulta: el administrador pregunta y trabajan 5 agentes:
+     0 Orquestador (entiende la pregunta y elige el periodo) ->
+     1 Datos -> 2 Analista -> 3 Estratega -> 4 Redactor -> 5 Evaluador.
+   - Reporte diario (automatico a las 23:00):
 
    Pasos:  0 Datos (SQL) -> 1 Orquestador -> 2 Analista -> 3 Estratega
            -> 4 Redactor -> 5 Evaluador (+ decisión del Orquestador)
@@ -26,6 +32,10 @@
     const selector = document.getElementById("selectorReporte");
     const botonGenerar = document.getElementById("btnGenerarReporte");
     const botonPdf = document.getElementById("btnPdfReporte");
+    const formConsulta = document.getElementById("formConsulta");
+    const campoPregunta = document.getElementById("preguntaAgentes");
+    const botonPreguntar = document.getElementById("btnPreguntar");
+    const subtitulo = document.getElementById("subtituloReporte");
 
     if (!modal) {
         return;
@@ -36,7 +46,7 @@
        1. CONFIGURACIÓN Y UTILIDADES
     ===================================================== */
 
-    const PASOS = [
+    const PASOS_REPORTE = [
         { clave: "datos", num: 0, icono: "📊", nombre: "Datos del día", trabajando: "Recopilando datos del día…" },
         { clave: "orquestador", num: 1, icono: "🧭", nombre: "Orquestador", trabajando: "Planificando el trabajo…" },
         { clave: "analista", num: 2, icono: "🔍", nombre: "Analista de datos", trabajando: "Analizando datos…" },
@@ -44,6 +54,23 @@
         { clave: "redactor", num: 4, icono: "✍️", nombre: "Redactor", trabajando: "Redactando informe…" },
         { clave: "evaluador", num: 5, icono: "⭐", nombre: "Evaluador", trabajando: "Calificando a los agentes…" }
     ];
+
+    // En una consulta el Orquestador va primero: entiende la pregunta y
+    // elige el periodo que luego se consulta.
+    const PASOS_CONSULTA = [
+        { clave: "orquestador", num: 0, icono: "🧭", nombre: "Orquestador", trabajando: "Entendiendo la pregunta…" },
+        { clave: "datos", num: 1, icono: "📊", nombre: "Datos del periodo", trabajando: "Calculando los datos…" },
+        { clave: "analista", num: 2, icono: "🔍", nombre: "Analista de datos", trabajando: "Analizando datos…" },
+        { clave: "estratega", num: 3, icono: "🎯", nombre: "Estratega", trabajando: "Generando estrategias…" },
+        { clave: "redactor", num: 4, icono: "✍️", nombre: "Redactor", trabajando: "Redactando la respuesta…" },
+        { clave: "evaluador", num: 5, icono: "⭐", nombre: "Evaluador", trabajando: "Calificando a los agentes…" }
+    ];
+
+    let modo = "consulta";            // "consulta" o "reporte"
+    let PASOS = PASOS_CONSULTA;
+
+    const pasoDe = (clave) => PASOS.find((p) => p.clave === clave);
+    const esConsulta = (r) => r && r.tipo === "CONSULTA";
 
     const NOMBRE_AGENTE = {
         orquestador: "🧭 Orquestador",
@@ -376,8 +403,8 @@
     /* Paso 1: hallazgos del Agente Analista */
     function vistaAnalista(r) {
 
-        if (r.etapa === null || r.etapa < 2) {
-            return seccion("🔍 2 · Agente Analista de datos: hallazgos", esperandoAgente(PASOS[2]));
+        if (r.etapa === null || r.etapa < pasoDe("analista").num) {
+            return seccion("🔍 2 · Agente Analista de datos: hallazgos", esperandoAgente(pasoDe("analista")));
         }
 
         const hallazgos = (r.hallazgos || []).map(normalizarHallazgo).map((h) => {
@@ -405,8 +432,8 @@
     /* Paso 2: plan del Agente Estratega */
     function vistaEstratega(r) {
 
-        if (r.etapa === null || r.etapa < 3) {
-            return seccion("🎯 3 · Agente Estratega: plan para mañana", esperandoAgente(PASOS[3]));
+        if (r.etapa === null || r.etapa < pasoDe("estratega").num) {
+            return seccion("🎯 3 · Agente Estratega: plan para mañana", esperandoAgente(pasoDe("estratega")));
         }
 
         const plan = tabla(
@@ -439,8 +466,8 @@
     /* Paso 3: resumen del Agente Redactor */
     function vistaRedactor(r) {
 
-        if (r.etapa === null || r.etapa < 4 || !r.titulo) {
-            return seccion("✍️ 4 · Agente Redactor: resumen ejecutivo", esperandoAgente(PASOS[4]));
+        if (r.etapa === null || r.etapa < pasoDe("redactor").num || !r.titulo) {
+            return seccion("✍️ 4 · Agente Redactor: resumen ejecutivo", esperandoAgente(pasoDe("redactor")));
         }
 
         const [icono, texto, tono] = CALIFICACION[r.calificacion] || ["", "", "neutro"];
@@ -546,13 +573,13 @@
     /* Paso 1: plan del Agente Orquestador */
     function vistaOrquestador(r) {
 
-        const titulo = "🧭 1 · Agente Orquestador: planifica y reparte el trabajo";
+        const titulo = `🧭 ${pasoDe("orquestador").num} · Agente Orquestador: ${esConsulta(r) ? "entiende la pregunta y reparte el trabajo" : "planifica y reparte el trabajo"}`;
         const o = r.orquestacion;
 
         if (!o || !o.plan) {
-            return seccion(titulo, r.etapa !== null && r.etapa >= 1 && r.estado !== "PROCESANDO"
+            return seccion(titulo, r.etapa !== null && r.etapa >= pasoDe("orquestador").num && r.estado !== "PROCESANDO"
                 ? ANTES_DEL_ORQUESTADOR
-                : esperandoAgente(PASOS[1]));
+                : esperandoAgente(pasoDe("orquestador")));
         }
 
         const p = o.plan;
@@ -573,6 +600,7 @@
                     <div><span class="rep-etiqueta">Enfoque del día</span><div class="rep-orq-enfoque">${escapar(p.enfoque || "--")}</div></div>
                     <div>${chip(`Prioridad ${p.prioridad || "--"}`, PRIORIDAD[p.prioridad] || "neutro")}</div>
                 </div>
+                ${esConsulta(r) && r.desde ? `<p class="mb-1"><strong>Periodo elegido:</strong> ${fechaCorta(r.desde)} al ${fechaCorta(r.hasta)}</p>` : ""}
                 <p class="rep-muted mb-2">${escapar(p.razon || "")}</p>
                 ${encargos}
             `,
@@ -588,7 +616,7 @@
         const e = r.evaluacion;
 
         if (!e) {
-            return seccion(titulo, r.estado === "LISTO" ? ANTES_DEL_ORQUESTADOR : esperandoAgente(PASOS[5]));
+            return seccion(titulo, r.estado === "LISTO" ? ANTES_DEL_ORQUESTADOR : esperandoAgente(pasoDe("evaluador")));
         }
 
         const [icono, texto, tono] = VEREDICTO[e.veredicto] || ["", e.veredicto || "", "neutro"];
@@ -658,16 +686,26 @@
 
         const [icono, texto, tono] = CALIFICACION[r.calificacion] || ["", "", "neutro"];
 
+        const cabecera = esConsulta(r)
+            ? `
+                <div class="inf-tipo">Consulta a los agentes</div>
+                <div class="inf-fecha">“${escapar(r.pregunta)}”</div>
+                <div class="inf-meta">
+                    Kimbos Delivery · Periodo analizado: ${r.desde ? `${fechaCorta(r.desde)} al ${fechaCorta(r.hasta)}` : "--"}
+                </div>
+            `
+            : `
+                <div class="inf-tipo">Informe operativo diario</div>
+                <div class="inf-fecha">${fechaLarga(r.fecha)}</div>
+                <div class="inf-meta">
+                    Kimbos Delivery ·
+                    ${r.origen === "PROGRAMADO" ? "Generado automáticamente a las 23:00" : "Generado a pedido del administrador"}
+                </div>
+            `;
+
         return `
             <header class="inf-membrete">
-                <div>
-                    <div class="inf-tipo">Informe operativo diario</div>
-                    <div class="inf-fecha">${fechaLarga(r.fecha)}</div>
-                    <div class="inf-meta">
-                        Kimbos Delivery ·
-                        ${r.origen === "PROGRAMADO" ? "Generado automáticamente a las 23:00" : "Generado a pedido del administrador"}
-                    </div>
-                </div>
+                <div>${cabecera}</div>
                 <div class="inf-sellos">
                     ${r.calificacion ? chip(texto, tono, icono) : ""}
                     ${r.nota_final !== null && r.nota_final !== undefined
@@ -689,6 +727,11 @@
             ? null
             : Math.round((100 - Number(m.porcentaje_retrasos)) * 10) / 10;
 
+        // Periodo de varios dias: promedio diario frente al periodo anterior
+        const varios = (m.dias || 1) > 1;
+        const actual = (m.comparacion || {}).promedio_diario_periodo || {};
+        const antes = (m.comparacion || {}).promedio_diario_periodo_anterior || {};
+
         const cifra = (titulo, valor, detalle) => `
             <div class="inf-cifra">
                 <div class="inf-cifra-titulo">${titulo}</div>
@@ -699,8 +742,12 @@
 
         return `
             <div class="inf-cifras">
-                ${cifra("Pedidos", m.pedidos ?? 0, badgeComparacion(m.pedidos, ayer.pedidos, "vs ayer", { decimales: 1 }))}
-                ${cifra("Ventas", soles(m.ventas_soles), badgeComparacion(m.ventas_soles, ayer.ventas_soles, "vs ayer", { prefijo: "S/ ", decimales: 2 }))}
+                ${cifra("Pedidos", m.pedidos ?? 0, varios
+                    ? badgeComparacion(actual.pedidos, antes.pedidos, "por día vs periodo anterior", { decimales: 1 })
+                    : badgeComparacion(m.pedidos, ayer.pedidos, "vs ayer", { decimales: 1 }))}
+                ${cifra("Ventas", soles(m.ventas_soles), varios
+                    ? badgeComparacion(actual.ventas_soles, antes.ventas_soles, "por día vs anterior", { prefijo: "S/ ", decimales: 2 })
+                    : badgeComparacion(m.ventas_soles, ayer.ventas_soles, "vs ayer", { prefijo: "S/ ", decimales: 2 }))}
                 ${cifra("Ticket promedio", soles(m.ticket_promedio_soles), "Gasto por pedido")}
                 ${cifra("Entregas a tiempo", aTiempo === null ? "--" : `${aTiempo} %`,
                     `${m.entregas_evaluadas ?? 0} entregas · ${m.tiempo_real_promedio_min ?? "--"} min prom.`)}
@@ -724,7 +771,7 @@
 
         return `
             <div class="rep-refuerzo">
-                🛵 Equipo sugerido para mañana: <strong>${r.repartidores_sugeridos ?? "--"} repartidores</strong>
+                🛵 Equipo sugerido${esConsulta(r) ? "" : " para mañana"}: <strong>${r.repartidores_sugeridos ?? "--"} repartidor(es)</strong>
                 ${r.franja_refuerzo ? ` · reforzar de ${escapar(r.franja_refuerzo)}` : ""}
             </div>
             ${tabla(["#", "Acción", "Responsable", "Horario", "Meta", "Prioridad"], filas, "Sin acciones.")}
@@ -772,7 +819,7 @@
                 ${membrete(r)}
 
                 <section class="inf-resumen">
-                    <div class="inf-etiqueta">Resumen ejecutivo</div>
+                    <div class="inf-etiqueta">${esConsulta(r) ? "Respuesta" : "Resumen ejecutivo"}</div>
                     <h2>${escapar(r.titulo)}</h2>
                     <p>${escapar(r.resumen)}</p>
                 </section>
@@ -783,14 +830,14 @@
 
                 ${r.conclusion ? `
                     <div class="inf-prioridad">
-                        <div class="inf-etiqueta">Prioridad número uno para mañana</div>
+                        <div class="inf-etiqueta">${esConsulta(r) ? "Recomendación principal" : "Prioridad número uno para mañana"}</div>
                         <div>${escapar(r.conclusion)}</div>
                     </div>
                 ` : ""}
 
-                ${seccion("1. Plan de acción para mañana", planDeAccion(r))}
+                ${seccion(esConsulta(r) ? "1. Plan de acción" : "1. Plan de acción para mañana", planDeAccion(r))}
 
-                ${seccion("2. Hallazgos del día", hallazgosInforme(r))}
+                ${seccion(esConsulta(r) ? "2. Hallazgos" : "2. Hallazgos del día", hallazgosInforme(r))}
 
                 <div class="inf-detalle">
                     <div class="inf-separador">3. Detalle de la operación</div>
@@ -798,14 +845,14 @@
                 </div>
 
                 ${resumenSintetico(r) ? `
-                    <div class="inf-separador">4. Resumen sintético del día</div>
+                    <div class="inf-separador">${esConsulta(r) ? "4. Resumen sintético del periodo" : "4. Resumen sintético del día"}</div>
                     <div class="inf-sintesis">${resumenSintetico(r)}</div>
                 ` : ""}
 
                 <div class="inf-anexo">
                     <div class="inf-separador">Anexo · Control de calidad del sistema multiagente</div>
                     <p class="rep-muted">
-                        Este informe lo prepararon 5 agentes de IA: el Orquestador planificó el trabajo,
+                        ${esConsulta(r) ? "Esta respuesta la prepararon" : "Este informe lo prepararon"} 5 agentes de IA: el Orquestador planificó el trabajo,
                         tres agentes de automatización lo hicieron y el Evaluador calificó su calidad.
                         Las cifras las calcula el sistema; los agentes solo las interpretan.
                     </p>
@@ -819,6 +866,15 @@
 
 
     function pie(r) {
+
+        if (esConsulta(r)) {
+            return `
+                <div class="rep-pie">
+                    Kimbos Delivery · Consulta del ${r.creado ? new Date(r.creado).toLocaleString("es-PE") : "--"}
+                    · Sistema multiagente: Orquestador → Analista de datos → Estratega → Redactor → Evaluador
+                </div>
+            `;
+        }
 
         return `
             <div class="rep-pie">
@@ -862,13 +918,15 @@
         const plan = (r.orquestacion || {}).plan;
 
         return {
-            0: `${m.pedidos ?? 0} pedidos analizados`,
-            1: plan ? `Prioridad ${plan.prioridad}` : "—",
-            2: `${(r.hallazgos || []).length} hallazgos`,
-            3: `${(r.recomendaciones || []).length} acciones · ${r.repartidores_sugeridos ?? "--"} repartidores`,
-            4: r.calificacion ? (CALIFICACION[r.calificacion] || [])[1] || "Resumen listo" : "Resumen listo",
-            5: r.nota_final !== null && r.nota_final !== undefined ? `Nota final ${Number(r.nota_final).toFixed(1)}` : "—"
-        }[paso.num];
+            datos: `${m.pedidos ?? 0} pedidos analizados`,
+            orquestador: plan
+                ? (esConsulta(r) && r.desde ? `${fechaCorta(r.desde).slice(0, 5)} al ${fechaCorta(r.hasta).slice(0, 5)}` : `Prioridad ${plan.prioridad}`)
+                : "—",
+            analista: `${(r.hallazgos || []).length} hallazgos`,
+            estratega: `${(r.recomendaciones || []).length} acciones · ${r.repartidores_sugeridos ?? "--"} repartidores`,
+            redactor: r.calificacion ? (CALIFICACION[r.calificacion] || [])[1] || "Respuesta lista" : "Respuesta lista",
+            evaluador: r.nota_final !== null && r.nota_final !== undefined ? `Nota final ${Number(r.nota_final).toFixed(1)}` : "—"
+        }[paso.clave];
     }
 
 
@@ -922,7 +980,7 @@
             <div class="rep-stepper" role="tablist" aria-label="Pasos del reporte">
                 <button type="button" class="rep-tab-completo ${vista === "completo" ? "activo" : ""}"
                     data-vista="completo" role="tab" aria-selected="${vista === "completo"}">
-                    📄 Reporte completo
+                    📄 ${esConsulta(r) ? "Respuesta completa" : "Reporte completo"}
                 </button>
                 <div class="rep-pasos">${pasos}</div>
             </div>
@@ -944,21 +1002,37 @@
         if (!r) {
             contenido.innerHTML = generacion
                 ? `<div class="rep">${htmlStepper(null)}${esperandoAgente(PASOS[0])}</div>`
-                : `
-                    <div class="alert alert-light border">
-                        Aún no hay reportes. Se generan solos cada día a las 23:00,
-                        o puedes generar el de hoy con el botón.
-                    </div>
-                `;
+                : modo === "consulta"
+                    ? `
+                        <div class="alert alert-light border">
+                            Escribe una pregunta o elige un ejemplo. El Orquestador la entiende,
+                            elige el periodo y reparte el trabajo entre los agentes.
+                        </div>
+                    `
+                    : `
+                        <div class="alert alert-light border">
+                            Aún no hay reportes. Se generan solos cada día a las 23:00,
+                            o puedes generar el de hoy con el botón.
+                        </div>
+                    `;
             return;
         }
 
-        if (r.estado === "SIN_DATOS") {
+        // Sin pedidos o pregunta ajena al negocio: respuesta corta
+        if (r.estado === "SIN_DATOS" || r.estado === "FUERA_DE_ALCANCE") {
             contenido.innerHTML = `
                 <div class="rep">
                     <div class="rep-resumen">
+                        ${esConsulta(r) ? `<div class="inf-tipo">Consulta: “${escapar(r.pregunta)}”</div>` : ""}
                         <h2>${escapar(r.titulo)}</h2>
-                        <p class="mb-0">${escapar(r.resumen)} Los agentes no se ejecutaron (costo 0).</p>
+                        <p class="mb-0">
+                            ${escapar(r.resumen)}
+                            ${esConsulta(r)
+                                ? (r.estado === "FUERA_DE_ALCANCE"
+                                    ? " Solo trabajó el Orquestador; los demás agentes no se ejecutaron."
+                                    : " Los agentes de análisis no se ejecutaron.")
+                                : " Los agentes no se ejecutaron (costo 0)."}
+                        </p>
                     </div>
                     ${pie(r)}
                 </div>
@@ -966,15 +1040,18 @@
             return;
         }
 
-        const cuerpo = {
-            completo: vistaCompleta,
-            0: vistaDatos,
-            1: vistaOrquestador,
-            2: vistaAnalista,
-            3: vistaEstratega,
-            4: vistaRedactor,
-            5: vistaEvaluador
-        }[vista](r);
+        const VISTAS = {
+            datos: vistaDatos,
+            orquestador: vistaOrquestador,
+            analista: vistaAnalista,
+            estratega: vistaEstratega,
+            redactor: vistaRedactor,
+            evaluador: vistaEvaluador
+        };
+
+        const cuerpo = vista === "completo"
+            ? vistaCompleta(r)
+            : VISTAS[PASOS[vista].clave](r);
 
         contenido.innerHTML = `
             <div class="rep">
@@ -991,10 +1068,14 @@
 
     async function llamarPaso(paso, fecha) {
 
-        const respuesta = await fetch(`/api/automatizacion/reportes/pasos/${paso.clave}`, {
+        const url = modo === "consulta"
+            ? `/api/automatizacion/consultas/${reporteActual.id}/pasos/${paso.clave}`
+            : `/api/automatizacion/reportes/pasos/${paso.clave}`;
+
+        const respuesta = await fetch(url, {
             method: "POST",
             headers: cabeceras(),
-            body: JSON.stringify(fecha ? { fecha } : {})
+            body: JSON.stringify(fecha && modo === "reporte" ? { fecha } : {})
         });
 
         const datos = await respuesta.json();
@@ -1003,7 +1084,39 @@
             throw new Error(datos.mensaje || "No se pudo completar el paso.");
         }
 
-        return datos.reporte;
+        return modo === "consulta" ? datos.consulta : datos.reporte;
+    }
+
+
+    /* Consulta nueva: se registra la pregunta y trabajan los 6 pasos. */
+    async function preguntar(pregunta) {
+
+        botonPreguntar.disabled = true;
+
+        try {
+
+            const respuesta = await fetch("/api/automatizacion/consultas", {
+                method: "POST",
+                headers: cabeceras(),
+                body: JSON.stringify({ pregunta })
+            });
+
+            const datos = await respuesta.json();
+
+            if (!respuesta.ok || !datos.ok) {
+                throw new Error(datos.mensaje || "No se pudo registrar la pregunta.");
+            }
+
+            reporteActual = datos.consulta;
+            campoPregunta.value = "";
+
+        } catch (error) {
+            botonPreguntar.disabled = false;
+            alert(error.message);
+            return;
+        }
+
+        await generarSecuencial(0);
     }
 
 
@@ -1011,6 +1124,7 @@
     async function generarSecuencial(desde = 0) {
 
         botonGenerar.disabled = true;
+        botonPreguntar.disabled = true;
         selector.disabled = true;
 
         let fecha = desde > 0 && reporteActual ? reporteActual.fecha : null;
@@ -1028,8 +1142,8 @@
                 reporteActual = await llamarPaso(paso, fecha);
                 fecha = reporteActual.fecha;
 
-                // Un dia sin pedidos termina aqui (sin usar el LLM)
-                if (reporteActual.estado === "SIN_DATOS") {
+                // Sin pedidos o pregunta ajena al negocio: termina aqui
+                if (reporteActual.estado === "SIN_DATOS" || reporteActual.estado === "FUERA_DE_ALCANCE") {
                     break;
                 }
             }
@@ -1038,7 +1152,7 @@
             vista = "completo";
             pintar();
 
-            await cargarLista(fecha);
+            await cargarLista(modo === "consulta" ? reporteActual.id : fecha);
 
         } catch (error) {
 
@@ -1047,6 +1161,7 @@
 
         } finally {
             botonGenerar.disabled = false;
+            botonPreguntar.disabled = false;
             selector.disabled = !reportes.length;
         }
     }
@@ -1095,7 +1210,7 @@
             <body>
                 <div class="marca">
                     <strong>KIMBOS</strong>
-                    <span>Reporte diario del sistema multiagente · ${fechaCorta(reporteActual.fecha)}</span>
+                    <span>${esConsulta(reporteActual) ? "Consulta a los agentes de IA" : `Reporte diario del sistema multiagente · ${fechaCorta(reporteActual.fecha)}`}</span>
                 </div>
                 <div class="rep">${vistaCompleta(reporteActual)}${pie(reporteActual)}</div>
                 <script>
@@ -1109,27 +1224,37 @@
 
     function llenarSelector() {
 
+        const etiqueta = (r) => esConsulta(r)
+            ? `${new Date(r.creado).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" })} · ${r.pregunta.length > 45 ? `${r.pregunta.slice(0, 45)}…` : r.pregunta}`
+            : fechaCorta(r.fecha);
+
         selector.innerHTML = reportes.length
-            ? reportes.map((r, i) => `<option value="${i}">${fechaCorta(r.fecha)}</option>`).join("")
-            : `<option>Sin reportes</option>`;
+            ? reportes.map((r, i) => `<option value="${i}">${escapar(etiqueta(r))}</option>`).join("")
+            : `<option>${modo === "consulta" ? "Sin consultas anteriores" : "Sin reportes"}</option>`;
 
         selector.disabled = !reportes.length;
     }
 
 
-    async function cargarLista(fechaElegida = null) {
+    /* Historial del modo: consultas (por id) o reportes (por fecha). */
+    async function cargarLista(elegido = null) {
 
-        const respuesta = await fetch("/api/automatizacion/reportes", { headers: cabeceras() });
+        const consulta = modo === "consulta";
+
+        const respuesta = await fetch(
+            consulta ? "/api/automatizacion/consultas" : "/api/automatizacion/reportes",
+            { headers: cabeceras() }
+        );
         const datos = await respuesta.json();
 
         if (!respuesta.ok || !datos.ok) {
-            throw new Error(datos.mensaje || "No se pudieron cargar los reportes.");
+            throw new Error(datos.mensaje || "No se pudo cargar el historial.");
         }
 
-        reportes = datos.reportes;
+        reportes = consulta ? datos.consultas : datos.reportes;
         llenarSelector();
 
-        const indice = Math.max(0, reportes.findIndex((r) => r.fecha === fechaElegida));
+        const indice = Math.max(0, reportes.findIndex((r) => (consulta ? r.id : r.fecha) === elegido));
         selector.value = String(indice);
         reporteActual = reportes[indice] || null;
         pintar();
@@ -1187,6 +1312,50 @@
 
     botonPdf.addEventListener("click", exportarPdf);
     modal.addEventListener("show.bs.modal", cargar);
+
+    formConsulta.addEventListener("submit", (evento) => {
+        evento.preventDefault();
+        const pregunta = campoPregunta.value.trim();
+        if (pregunta && !generacion) {
+            preguntar(pregunta);
+        }
+    });
+
+    formConsulta.addEventListener("click", (evento) => {
+        const ejemplo = evento.target.closest("[data-ejemplo]");
+        if (ejemplo) {
+            campoPregunta.value = ejemplo.dataset.ejemplo;
+            campoPregunta.focus();
+        }
+    });
+
+    /* Cambio de modo: consulta o reporte diario */
+    modal.addEventListener("click", (evento) => {
+
+        const boton = evento.target.closest("[data-modo]");
+
+        if (!boton || boton.dataset.modo === modo || (generacion && generacion.estado === "trabajando")) {
+            return;
+        }
+
+        modo = boton.dataset.modo;
+        PASOS = modo === "consulta" ? PASOS_CONSULTA : PASOS_REPORTE;
+        reporteActual = null;
+        reportes = [];
+
+        modal.querySelectorAll("[data-modo]").forEach((b) => {
+            b.classList.toggle("activo", b.dataset.modo === modo);
+            b.setAttribute("aria-selected", b.dataset.modo === modo ? "true" : "false");
+        });
+
+        formConsulta.classList.toggle("d-none", modo !== "consulta");
+        botonGenerar.classList.toggle("d-none", modo !== "reporte");
+        subtitulo.textContent = modo === "consulta"
+            ? "Pregunta lo que necesites: trabajan 5 agentes (Orquestador → Analista → Estratega → Redactor → Evaluador)."
+            : "Generado cada día a las 23:00 por 5 agentes: Orquestador → Analista de datos → Estratega → Redactor → Evaluador.";
+
+        cargar();
+    });
 
 
     /* =====================================================
@@ -1278,6 +1447,7 @@
         .rep-pie { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e1e0d9; font-size: 11px; color: #898781; }
 
         /* Informe de gerencia */
+        .inf-fecha q { quotes: none; }
         .inf { color: #1d1d1b; }
         .inf-membrete { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start;
                         padding-bottom: 14px; margin-bottom: 18px; border-bottom: 2px solid #1d1d1b; }

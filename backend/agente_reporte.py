@@ -109,9 +109,19 @@ def _numero(valor):
 def metricas_del_dia(fecha):
     """Indicadores del dia (hora de Lima), solo pedidos reales."""
 
+    return metricas_periodo(fecha, fecha)
+
+
+def metricas_periodo(desde, hasta):
+    """Indicadores de un periodo (desde y hasta incluidos, hora de Lima),
+    solo pedidos reales. Un dia: desde = hasta. Lo usan el reporte diario
+    y las consultas a los agentes ("esta semana", "ayer", ...)."""
+
+    dias = (hasta - desde).days + 1
+
     filtro = f"""
         COALESCE(p.fuente_datos, 'REAL') = 'REAL'
-        AND (p.fecha_pedido AT TIME ZONE '{ZONA}')::date = %s
+        AND (p.fecha_pedido AT TIME ZONE '{ZONA}')::date BETWEEN %s AND %s
     """
 
     with get_connection() as conn:
@@ -131,7 +141,7 @@ def metricas_del_dia(fecha):
                 FROM pedidos p
                 JOIN estados_pedido e ON e.id = p.estado_id
                 WHERE {filtro};
-            """, (fecha,))
+            """, (desde, hasta))
 
             (total, entregados, cancelados, ventas, retrasados, evaluados,
              real_prom, estimado_prom, distancia_prom) = cur.fetchone()
@@ -145,7 +155,7 @@ def metricas_del_dia(fecha):
                 GROUP BY 1
                 ORDER BY 2 DESC
                 LIMIT 5;
-            """, (fecha,))
+            """, (desde, hasta))
 
             productos = [
                 {"producto": fila[0], "unidades": int(fila[1])}
@@ -160,7 +170,7 @@ def metricas_del_dia(fecha):
                 WHERE {filtro}
                 GROUP BY 1
                 ORDER BY 1;
-            """, (fecha,))
+            """, (desde, hasta))
 
             por_hora = {f"{fila[0]:02d}h": fila[1] for fila in cur.fetchall()}
 
@@ -181,7 +191,7 @@ def metricas_del_dia(fecha):
                     LIMIT 1
                 ) pm ON TRUE
                 WHERE {filtro} AND p.retraso IS NOT NULL;
-            """, (fecha,))
+            """, (desde, hasta))
 
             ml_evaluados, ml_aciertos, riesgo_prom = cur.fetchone()
 
@@ -191,7 +201,7 @@ def metricas_del_dia(fecha):
                 JOIN pedidos p ON p.id = a.pedido_id
                 WHERE {filtro} AND a.estado = 'LISTA'
                 GROUP BY 1;
-            """, (fecha,))
+            """, (desde, hasta))
 
             alertas = {fila[0]: fila[1] for fila in cur.fetchall()}
 
@@ -208,7 +218,7 @@ def metricas_del_dia(fecha):
                 WHERE {filtro}
                 GROUP BY 1
                 ORDER BY 2 DESC;
-            """, (fecha,))
+            """, (desde, hasta))
 
             por_repartidor = [
                 {
@@ -224,7 +234,7 @@ def metricas_del_dia(fecha):
                 SELECT ROUND(AVG(COALESCE(p.espera_repartidor_min, 0))::numeric, 1)
                 FROM pedidos p
                 WHERE {filtro};
-            """, (fecha,))
+            """, (desde, hasta))
 
             espera_prom = cur.fetchone()[0]
 
@@ -235,7 +245,7 @@ def metricas_del_dia(fecha):
                 WHERE {filtro} AND a.estado = 'LISTA'
                 ORDER BY a.probabilidad_retraso DESC NULLS LAST
                 LIMIT 10;
-            """, (fecha,))
+            """, (desde, hasta))
 
             alertas_detalle = [
                 {
@@ -276,13 +286,42 @@ def metricas_del_dia(fecha):
                     COUNT(*) FILTER (WHERE estado = 'CANCELADO' AND paso_por_cocina),
                     COALESCE(SUM(subtotal) FILTER (WHERE estado = 'CANCELADO' AND paso_por_cocina), 0)
                 FROM dia;
-            """, (fecha,))
+            """, (desde, hasta))
 
             (vendido_entregado, cobrado, sin_confirmar, preparados,
              cancelados_en_cocina, merma) = cur.fetchone()
 
-            dia_anterior = _resumen_rango(cur, fecha, 1, 1)
-            semana_previa = _resumen_rango(cur, fecha, 7, 7)
+            # Comparacion: un dia contra el dia anterior y los 7 previos;
+            # un periodo contra el periodo anterior de igual duracion.
+            dia_anterior = _resumen_rango(cur, desde, 1, 1) if dias == 1 else None
+            semana_previa = _resumen_rango(cur, desde, 1 if dias > 1 else 7, dias if dias > 1 else 7)
+
+            # Detalle por dia (solo periodos de varios dias)
+            por_dia = []
+
+            if dias > 1:
+                cur.execute(f"""
+                    SELECT
+                        (p.fecha_pedido AT TIME ZONE '{ZONA}')::date,
+                        COUNT(*),
+                        COALESCE(SUM(p.total) FILTER (WHERE e.codigo <> 'CANCELADO'), 0),
+                        COUNT(*) FILTER (WHERE p.retraso IS TRUE)
+                    FROM pedidos p
+                    JOIN estados_pedido e ON e.id = p.estado_id
+                    WHERE {filtro}
+                    GROUP BY 1
+                    ORDER BY 1;
+                """, (desde, hasta))
+
+                por_dia = [
+                    {
+                        "dia": fila[0].isoformat(),
+                        "pedidos": fila[1],
+                        "ventas_soles": float(fila[2]),
+                        "retrasos": fila[3],
+                    }
+                    for fila in cur.fetchall()
+                ]
 
     vendidos = total - cancelados
 
@@ -292,7 +331,11 @@ def metricas_del_dia(fecha):
     )
 
     return {
-        "fecha": fecha.isoformat(),
+        "fecha": hasta.isoformat(),
+        "desde": desde.isoformat(),
+        "hasta": hasta.isoformat(),
+        "dias": dias,
+        "por_dia": por_dia,
         "pedidos": total,
         "entregados": entregados,
         "cancelados": cancelados,
@@ -318,10 +361,20 @@ def metricas_del_dia(fecha):
         "repartidores_disponibles": repartidores_en_turno(),
         "hora_pico": hora_pico,
         "espera_repartidor_promedio_min": _numero(espera_prom),
-        "comparacion": {
-            "dia_anterior": dia_anterior,
-            "promedio_diario_7_dias_previos": semana_previa,
-        },
+        "comparacion": (
+            {
+                "dia_anterior": dia_anterior,
+                "promedio_diario_7_dias_previos": semana_previa,
+            }
+            if dias == 1 else
+            {
+                "promedio_diario_periodo": {
+                    "pedidos": round(total / dias, 1),
+                    "ventas_soles": round(float(ventas) / dias, 2),
+                },
+                "promedio_diario_periodo_anterior": semana_previa,
+            }
+        ),
         "resumen_sintetico": _resumen_sintetico(
             total, cancelados, float(ventas), vendidos,
             float(vendido_entregado), float(cobrado), sin_confirmar,
