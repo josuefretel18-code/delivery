@@ -575,9 +575,27 @@ async function cargarDashboardML(opciones) {
 
         }
 
+        if (silencioso && JSON.stringify(datos) === JSON.stringify(ultimosDatosML)) {
+            programarRefrescoML();
+            return;
+        }
+
+        const cuerpo = contenido.closest(".modal-body");
+        const scroll = cuerpo ? cuerpo.scrollTop : 0;
+
         renderizarDashboardML(datos);
 
+        if (silencioso && cuerpo) {
+            cuerpo.scrollTop = scroll;
+        }
+
     } catch (error) {
+
+        // En el refresco automatico no se borra lo que ya se ve
+        if (silencioso && ultimosDatosML) {
+            programarRefrescoML();
+            return;
+        }
 
         contenido.innerHTML = `
             <div class="alert alert-danger">
@@ -591,6 +609,27 @@ async function cargarDashboardML(opciones) {
 
     }
 
+}
+
+
+/* El Dashboard ML se refresca solo cada 10 s mientras esta abierto: la
+   matriz y las predicciones en pedidos reales se ven al instante. */
+function programarRefrescoML() {
+
+    clearTimeout(temporizadorDashboardML);
+
+    temporizadorDashboardML = setTimeout(() => {
+
+        const modalAbierto =
+            document.getElementById("modalDashboardML").classList.contains("show");
+
+        if (modalAbierto && document.visibilityState === "visible") {
+            cargarDashboardML({ silencioso: true });
+        } else if (modalAbierto) {
+            programarRefrescoML();
+        }
+
+    }, 10000);
 }
 
 
@@ -742,7 +781,58 @@ function htmlJustificacionModelosML(comp, modelo) {
 }
 
 
+// Vista de la matriz de confusion: "reales" (pedidos de Kimbos, se
+// actualiza con cada entrega) o "prueba" (20 % de prueba del entrenamiento)
+let vistaMatrizML = "reales";
+let ultimosDatosML = null;
+
+
+function htmlMatrizConVistas(modelo, reales) {
+
+    const enVivo = vistaMatrizML === "reales";
+
+    const boton = (valor, texto) => `
+        <button type="button"
+            class="btn ${vistaMatrizML === valor ? "btn-dark" : "btn-outline-dark"}"
+            onclick="cambiarMatrizML('${valor}')">${texto}</button>
+    `;
+
+    return `
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h6 class="fw-bold mb-0">Matriz de confusión</h6>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Datos de la matriz">
+                ${boton("reales", "● Pedidos reales · en vivo")}
+                ${boton("prueba", "Prueba del entrenamiento")}
+            </div>
+        </div>
+        ${matrizConfusionML(enVivo ? reales.matriz_confusion : modelo.matriz_confusion)}
+        <p class="small text-secondary mt-2 mb-0">
+            ${enVivo
+                ? `${reales.evaluados} pedido(s) reales de Kimbos entregados y con predicción.
+                   Se actualiza sola con cada entrega (cada 10 s).`
+                : `${modelo.dataset.registros_prueba.toLocaleString("es-PE")} registros de prueba (20 %)
+                   del modelo ${escaparHtmlAdmin(modelo.version || "")}. Cambia solo cuando se activa un modelo nuevo.`}
+        </p>
+    `;
+}
+
+
+function cambiarMatrizML(valor) {
+
+    vistaMatrizML = valor;
+
+    if (ultimosDatosML) {
+        const cuerpo = document.getElementById("contenidoDashboardML").closest(".modal-body");
+        const scroll = cuerpo ? cuerpo.scrollTop : 0;
+        renderizarDashboardML(ultimosDatosML);
+        if (cuerpo) cuerpo.scrollTop = scroll;
+    }
+}
+
+
 function renderizarDashboardML(datos) {
+
+    ultimosDatosML = datos;
 
     const modelo = datos.modelo;
     const reales = datos.reales;
@@ -833,8 +923,7 @@ function renderizarDashboardML(datos) {
                 <div class="row g-4 align-items-start">
 
                     <div class="col-lg-5">
-                        <h6 class="fw-bold">Matriz de confusión</h6>
-                        ${matrizConfusionML(modelo.matriz_confusion)}
+                        ${htmlMatrizConVistas(modelo, reales)}
                     </div>
 
                     <div class="col-lg-7">
@@ -1252,24 +1341,8 @@ function renderizarDashboardML(datos) {
     ).innerHTML = html;
 
 
-    // Mientras se reentrena, refrescar cada 10 s (solo si el
-    // modal sigue abierto).
-    if (datos.reentrenamiento?.en_curso) {
-
-        temporizadorDashboardML = setTimeout(() => {
-
-            const modalAbierto =
-                document.getElementById(
-                    "modalDashboardML"
-                ).classList.contains("show");
-
-            if (modalAbierto) {
-                cargarDashboardML({ silencioso: true });
-            }
-
-        }, 10000);
-
-    }
+    // Refresco automatico cada 10 s mientras el modal este abierto
+    programarRefrescoML();
 
 }
 
