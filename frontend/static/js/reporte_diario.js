@@ -310,7 +310,7 @@
     ===================================================== */
 
     /* Paso 0: indicadores del día (calculados con SQL) */
-    function vistaDatos(r, { sinIndicadores = false } = {}) {
+    function vistaDatos(r, { sinIndicadores = false, exportar = false } = {}) {
 
         const m = r.metricas || {};
         const ml = m.modelo_ml || {};
@@ -377,12 +377,12 @@
                 escapar(ACCIONES[a.accion] || a.accion),
                 `<span class="rep-num">${a.minutos_extra ?? 0}</span>`
             ]),
-            "Los agentes no analizaron pedidos este día."
+            exportar ? "No hubo pedidos con riesgo de retraso." : "Los agentes no analizaron pedidos este día."
         );
 
         return `
             ${sinIndicadores ? "" : seccion("📊 Indicadores del día", kpis, "Calculados por el sistema con SQL; los agentes los interpretan.")}
-            ${seccion("Operación del día", `
+            ${seccion(esConsulta(r) ? "Operación del periodo" : "Operación del día", `
                 <div class="rep-dos">
                     <div>
                         <div class="rep-etiqueta">Pedidos por hora${m.hora_pico ? ` · pico: ${escapar(m.hora_pico)}` : ""}</div>
@@ -395,7 +395,7 @@
                 </div>
             `)}
             ${seccion("🛵 Repartidores", repartidores)}
-            ${seccion("⚠️ Alertas de riesgo (pedidos analizados por los agentes)", alertas)}
+            ${seccion(exportar ? "⚠️ Pedidos con riesgo de retraso" : "⚠️ Alertas de riesgo (pedidos analizados por los agentes)", alertas)}
         `;
     }
 
@@ -682,9 +682,29 @@
     }
 
 
-    function membrete(r) {
+    function membrete(r, exportar = false) {
 
         const [icono, texto, tono] = CALIFICACION[r.calificacion] || ["", "", "neutro"];
+
+        // Documento exportado: como un informe del area, sin el proceso
+        // de los agentes (ni sellos de calidad ni "generado por IA").
+        if (exportar) {
+            return `
+                <header class="inf-membrete">
+                    <div>
+                        <div class="inf-tipo">${esConsulta(r) ? "Informe de análisis" : "Informe operativo diario"}</div>
+                        <div class="inf-fecha">${esConsulta(r) ? escapar(r.pregunta) : fechaLarga(r.fecha)}</div>
+                        <div class="inf-meta">
+                            Kimbos Delivery · Área de Operaciones
+                            ${esConsulta(r) && r.desde ? ` · Periodo: ${fechaCorta(r.desde)} al ${fechaCorta(r.hasta)}` : ""}
+                        </div>
+                    </div>
+                    <div class="inf-sellos">
+                        ${r.calificacion ? chip(texto, tono, icono) : ""}
+                    </div>
+                </header>
+            `;
+        }
 
         const cabecera = esConsulta(r)
             ? `
@@ -798,7 +818,7 @@
     }
 
 
-    function vistaCompleta(r) {
+    function vistaCompleta(r, { exportar = false } = {}) {
 
         // Mientras se genera, o si es un reporte a medias, se muestran
         // los pasos en el orden de los agentes.
@@ -816,7 +836,7 @@
         return `
             <article class="inf">
 
-                ${membrete(r)}
+                ${membrete(r, exportar)}
 
                 <section class="inf-resumen">
                     <div class="inf-etiqueta">${esConsulta(r) ? "Respuesta" : "Resumen ejecutivo"}</div>
@@ -841,7 +861,7 @@
 
                 <div class="inf-detalle">
                     <div class="inf-separador">3. Detalle de la operación</div>
-                    ${vistaDatos(r, { sinIndicadores: true })}
+                    ${vistaDatos(r, { sinIndicadores: true, exportar })}
                 </div>
 
                 ${resumenSintetico(r) ? `
@@ -849,7 +869,7 @@
                     <div class="inf-sintesis">${resumenSintetico(r)}</div>
                 ` : ""}
 
-                <div class="inf-anexo">
+                ${exportar ? "" : `<div class="inf-anexo">
                     <div class="inf-separador">Anexo · Control de calidad del sistema multiagente</div>
                     <p class="rep-muted">
                         ${esConsulta(r) ? "Esta respuesta la prepararon" : "Este informe lo prepararon"} 5 agentes de IA: el Orquestador planificó el trabajo,
@@ -858,9 +878,24 @@
                     </p>
                     ${vistaOrquestador(r)}
                     ${vistaEvaluador(r)}
-                </div>
+                </div>`}
 
             </article>
+        `;
+    }
+
+
+    /* Pie del documento exportado (sin mencionar a los agentes) */
+    function pieDocumento(r) {
+
+        const elaborado = r.generado ? new Date(r.generado).toLocaleString("es-PE") : "--";
+
+        return `
+            <div class="rep-pie">
+                Kimbos Delivery · Área de Operaciones ·
+                ${esConsulta(r) ? "Informe de análisis" : `Informe del ${fechaCorta(r.fecha)}`} ·
+                Elaborado el ${elaborado}
+            </div>
         `;
     }
 
@@ -1171,6 +1206,32 @@
        6. PDF, CARGA Y EVENTOS
     ===================================================== */
 
+    /* Informe para exportar: el resultado, como lo presentaria una
+       persona del area. Sin el trabajo de cada agente, sin notas de
+       calidad y sin iconos. */
+    function documentoExportable(r) {
+
+        // Dia o periodo sin pedidos: documento corto
+        const cuerpo = r.estado === "LISTO"
+            ? vistaCompleta(r, { exportar: true })
+            : `
+                <article class="inf">
+                    ${membrete(r, true)}
+                    <section class="inf-resumen">
+                        <h2>${escapar(r.titulo || "")}</h2>
+                        <p>${escapar(r.resumen || "")}</p>
+                    </section>
+                </article>
+            `;
+
+        const html = cuerpo + pieDocumento(r);
+
+        return html
+            .replace(/\p{Extended_Pictographic}\uFE0F?/gu, "")
+            .replace(/[\u2600-\u27BF]\uFE0F?/g, "");
+    }
+
+
     function exportarPdf() {
 
         if (!reporteActual) {
@@ -1210,9 +1271,9 @@
             <body>
                 <div class="marca">
                     <strong>KIMBOS</strong>
-                    <span>${esConsulta(reporteActual) ? "Consulta a los agentes de IA" : `Reporte diario del sistema multiagente · ${fechaCorta(reporteActual.fecha)}`}</span>
+                    <span>${esConsulta(reporteActual) ? "Informe de análisis" : `Informe operativo · ${fechaCorta(reporteActual.fecha)}`}</span>
                 </div>
-                <div class="rep">${vistaCompleta(reporteActual)}${pie(reporteActual)}</div>
+                <div class="rep">${documentoExportable(reporteActual)}</div>
                 <script>
                     window.onload = function () { setTimeout(function () { window.print(); }, 300); };
                 <\/script>
