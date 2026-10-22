@@ -3161,7 +3161,9 @@ function htmlAlertaAgentes(pedido) {
                     <div class="ma-titulo">🤖 Análisis multiagente</div>
                     <div class="ma-subtitulo">
                         ${alerta.origen === "MANUAL" ? "Análisis manual" : "Automático al crear el pedido"}
-                        · ${conOrquestador ? "5 agentes: Orquestador, 3 de automatización y Evaluador" : "3 agentes en cadena"}
+                        · ${conOrquestador
+                            ? "5 agentes: Orquestador, 3 de automatización y Evaluador"
+                            : "3 agentes en cadena"}
                     </div>
                 </div>
                 <div class="ma-nivel">
@@ -3204,7 +3206,9 @@ function htmlAlertaAgentes(pedido) {
                     <div class="ma-cuerpo">
                         <div class="ma-rol">3 · Agente Comunicador <span>· avisa al cliente</span> ${chipNota("comunicador")} ${reintentado("comunicador")}</div>
                         ${encargo("comunicador")}
-                        <div class="ma-mensaje">“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</div>
+                        ${alerta.mensaje_cliente
+                            ? `<div class="ma-mensaje">“${escaparHtmlAdmin(alerta.mensaje_cliente)}”</div>`
+                            : `<div class="ma-texto ma-secundario">Sin aviso al cliente.</div>`}
                         <div class="ma-texto ma-secundario">Para el admin: ${escaparHtmlAdmin(alerta.resumen_admin)}</div>
                     </div>
                 </li>
@@ -3237,7 +3241,7 @@ async function analizarPedidoConAgentes(pedidoId, boton) {
     const token = localStorage.getItem("kimbos_admin_token");
 
     boton.disabled = true;
-    boton.textContent = "🤖 5 agentes trabajando (≈25 s)…";
+    boton.textContent = "🤖 Agentes trabajando (≈10 s)…";
 
     try {
 

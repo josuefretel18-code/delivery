@@ -165,19 +165,22 @@ Cada llamada se registra en la tabla `llm_uso` con su costo.
 
 Se dispara al crear un pedido con riesgo ≥ 40 %, o con el botón
 "Analizar con agentes". Corre en segundo plano y el cliente no espera.
+Trabajan 3 agentes en cadena (3 llamadas al LLM, ≈ USD 0.0009 por alerta):
 
 ```
-🧭 Orquestador (planifica: prioridad y encargo para cada agente)
-   → 🔍 Analista (causa del riesgo; puede consultar la carga y simular con el ML)
+🔍 Analista (causa del riesgo; puede consultar la carga y simular con el ML)
    → ⚙️ Operaciones (acción recomendada y minutos extra)
    → 💬 Comunicador (aviso al cliente y resumen al admin)
-   → ⭐ Evaluador (nota 1-10 por agente: precisión, coherencia, utilidad, claridad)
-   → 🧭 Orquestador (decide: publicar al cliente, solo admin, o reintentar)
 ```
 
-### B) Reporte diario (por horario, 23:00)
+El Comunicador siempre avisa al cliente: si hay demora, le indica los
+minutos aproximados; si el pedido va bien, le confirma que llega según
+lo previsto.
 
-Seis pasos secuenciales. El panel los muestra con un stepper y el
+### B) Reporte diario (por horario, 23:00): 5 agentes
+
+Es el flujo completo con **1 Orquestador, 3 agentes de automatización y
+1 Evaluador**. Seis pasos secuenciales. El panel los muestra con un stepper y el
 servidor rechaza un paso fuera de orden.
 
 ```
@@ -199,12 +202,12 @@ El resultado es un **informe operativo**:
 
 - **Las cifras las calcula el sistema con SQL; los agentes solo las
   interpretan.**
-- **Reintento:** si un agente saca nota menor a 6, el Orquestador le
-  devuelve el trabajo con la observación del Evaluador (1 reintento) y
-  se vuelve a evaluar. El código valida que la decisión cuadre con las
-  notas.
+- **Reintento (reporte diario):** si un agente saca nota menor a 6, el
+  Orquestador le devuelve el trabajo con la observación del Evaluador
+  (1 reintento) y se vuelve a evaluar. El código valida que la decisión
+  cuadre con las notas.
 - **Días sin pedidos:** el reporte no llama al LLM (costo 0).
-- **Costo medido:** alerta ≈ USD 0.002; reporte diario ≈ USD 0.005.
+- **Costo medido:** alerta ≈ USD 0.0009; reporte diario ≈ USD 0.005.
   Presupuesto mensual de USD 10, con cortes automáticos por tipo de uso
   (`LLM_CORTE_*`).
 
@@ -377,7 +380,7 @@ Todas las rutas `/api` responden JSON (también en errores 404, 405 y
 | `sedes`, `categorias_producto`, `productos` | Tienda y catálogo |
 | `pedidos`, `detalle_pedido`, `historial_pedido`, `estados_pedido` | Pedidos, productos, cambios de estado (pago, cancelación, recojo y entrega) |
 | `predicciones_ml` | Predicción de cada pedido con las variables usadas |
-| `alertas_pedido` | Resultado del multiagente A (incluye plan del Orquestador y notas del Evaluador) |
+| `alertas_pedido` | Resultado del multiagente A (causa, acción, aviso al cliente y resumen) |
 | `reportes_diarios` | Resultado del multiagente B por día |
 | `llm_uso` | Tokens, costo y duración de cada llamada al LLM |
 
