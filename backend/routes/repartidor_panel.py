@@ -206,6 +206,12 @@ def mis_pedidos_asignados():
         else:
             en_curso.append(pedido)
 
+    # Por entregar: primero el de plazo mas cercano (el mas urgente)
+    en_curso.sort(key=lambda p: (
+        p["minutos_restantes"] is None,
+        p["minutos_restantes"] if p["minutos_restantes"] is not None else 0,
+    ))
+
     return jsonify({"ok": True, "en_curso": en_curso, "entregados_hoy": entregados})
 
 

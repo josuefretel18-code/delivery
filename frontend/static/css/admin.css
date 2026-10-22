@@ -1363,3 +1363,29 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .aviso-admin { transition: none; }
 }
+
+
+/* Orden de despacho a los repartidores */
+.turno-despacho {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #f1f1ef;
+    border: 1px solid #deddd6;
+    color: #343a40;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.turno-primero {
+    background: #fff4e8;
+    border-color: #ffc896;
+    color: #9a4a00;
+}
+
+.turno-urgente {
+    background: #fdeaea;
+    border-color: #f1b5b5;
+    color: #8a1f1f;
+}

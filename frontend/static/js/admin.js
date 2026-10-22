@@ -1482,6 +1482,8 @@ function renderizarPedidosAdmin(pedidos) {
                                 )}
                             </small>
 
+                            ${htmlTurnoDespacho(pedido)}
+
                         </div>
 
                         <span class="estado-admin">
@@ -3753,19 +3755,19 @@ const MODULOS_PEDIDOS = {
         paso: 1,
         nombre: "Recibidos",
         estados: ["REGISTRADO"],
-        guia: "Revisa el pedido y pásalo a preparación."
+        guia: "Revisa el pedido y pásalo a preparación. Ordenados según su comida quedará lista."
     },
     PREPARACION: {
         paso: 2,
         nombre: "En preparación",
         estados: ["PREPARANDO"],
-        guia: "Cuando esté listo, asigna el repartidor y envía el pedido."
+        guia: "Ordenados por salida: asigna repartidor en este orden (#1 sale primero)."
     },
     CAMINO: {
         paso: 3,
         nombre: "En camino",
         estados: ["ASIGNADO", "RECOGIDO", "EN_RUTA"],
-        guia: "El repartidor marcará la entrega desde su panel."
+        guia: "Ordenados por el plazo de entrega más cercano. El repartidor marca la entrega desde su panel."
     },
     ENTREGADOS: {
         paso: 4,
@@ -3815,6 +3817,69 @@ function pedidosDelModulo(pedidos, modulo) {
 }
 
 
+/* Orden de despacho a los repartidores:
+   - Recibidos y En preparacion: segun la hora en que la comida queda
+     lista (pedido + preparacion). El primero es el que sale primero:
+     el mismo criterio que usa la estimacion de espera de repartidor.
+   - En camino: segun el plazo prometido mas cercano.
+   Cada pedido guarda su turno en _despacho para mostrarlo. */
+function ordenarParaDespacho(pedidos, modulo) {
+
+    const minutosA = (fechaIso, minutos) =>
+        new Date(fechaIso).getTime() + (Number(minutos) || 0) * 60000;
+
+    let clave = null;
+
+    if (modulo === "RECIBIDOS" || modulo === "PREPARACION") {
+        clave = (p) => minutosA(p.fecha_pedido, p.tiempo_preparacion_estimado_min);
+    } else if (modulo === "CAMINO") {
+        clave = (p) => minutosA(p.fecha_pedido, p.tiempo_estimado_total_min);
+    }
+
+    if (!clave) {
+        return pedidos;
+    }
+
+    return [...pedidos]
+        .sort((a, b) => clave(a) - clave(b))
+        .map((pedido, indice) => ({
+            ...pedido,
+            _despacho: {
+                turno: indice + 1,
+                hora: clave(pedido),
+                tipo: modulo === "CAMINO" ? "entrega" : "salida"
+            }
+        }));
+}
+
+
+function htmlTurnoDespacho(pedido) {
+
+    const d = pedido._despacho;
+
+    if (!d) {
+        return "";
+    }
+
+    const hora = new Date(d.hora).toLocaleTimeString("es-PE", { hour: "numeric", minute: "2-digit" });
+    const yaPaso = d.hora <= Date.now();
+
+    if (d.tipo === "entrega") {
+        return `
+            <div class="turno-despacho ${yaPaso ? "turno-urgente" : ""}">
+                🏁 Entrega #${d.turno} · plazo ${hora}
+            </div>
+        `;
+    }
+
+    return `
+        <div class="turno-despacho ${d.turno === 1 ? "turno-primero" : ""}">
+            🛵 Salida #${d.turno} · ${yaPaso ? "comida lista: asignar repartidor" : `comida lista ~${hora}`}
+        </div>
+    `;
+}
+
+
 function mostrarModuloPedidos(pedidos) {
 
     pedidosAdminCache = pedidos;
@@ -3822,7 +3887,10 @@ function mostrarModuloPedidos(pedidos) {
     elegirModuloInicial();
 
     const modulo = MODULOS_PEDIDOS[moduloPedidos];
-    const delModulo = pedidosDelModulo(pedidos, moduloPedidos);
+    const delModulo = ordenarParaDespacho(
+        pedidosDelModulo(pedidos, moduloPedidos),
+        moduloPedidos
+    );
     const totalModulo = totalDelModulo(moduloPedidos);
 
     document.querySelectorAll("[data-modulo]").forEach((boton) => {
